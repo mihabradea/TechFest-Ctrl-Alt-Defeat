@@ -1,1 +1,6 @@
 openai
+fastapi
+uvicorn
+python-multipart
+aiofiles
+gtts
