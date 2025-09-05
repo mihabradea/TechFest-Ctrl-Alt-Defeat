@@ -40,12 +40,12 @@ class PayPalService:
             tools=tools
         )
 
-    def process_query(self, amount):
+    def process_query(self, message):
         import asyncio
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        result = Runner.run_sync(self.agent, f"Create an order for ${amount}. Return the approval url and order_id")
+        result = Runner.run_sync(self.agent, message)
         return result
