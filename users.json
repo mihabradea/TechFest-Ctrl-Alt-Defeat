@@ -1,0 +1,8 @@
+{
+  "test@example.com": {
+    "password": "$2b$12$WmLdDij3Y8zZPL7TW/fvYe9/qHP2kzj3RvGx6telZKzgLRjd1q30u"
+  }, 
+  "test1@example.com": {
+    "password": "$2b$12$ehhvRaDDUQbChvLRyTD0eurxNF3sgjGUVpkOeB6U6MsN84bWebQj."
+  }
+}
