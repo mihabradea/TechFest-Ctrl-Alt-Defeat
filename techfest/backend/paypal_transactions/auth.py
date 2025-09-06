@@ -1,0 +1,37 @@
+import base64
+import logging
+import httpx
+
+from .config import require_env, paypal_base_url
+
+log = logging.getLogger("paypalx.auth")
+
+def fetch_paypal_token() -> str:
+    client_id = require_env("PAYPAL_CLIENT_ID")
+    secret = require_env("PAYPAL_CLIENT_SECRET")
+
+    base_url = paypal_base_url()
+    basic = base64.b64encode(f"{client_id}:{secret}".encode("utf-8")).decode("ascii")
+    headers = {
+        "Authorization": f"Basic {basic}",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+    }
+
+    try:
+        log.info("POST %s/v1/oauth2/token", base_url)
+        with httpx.Client(timeout=20.0) as client:
+            r = client.post(f"{base_url}/v1/oauth2/token",
+                            headers=headers,
+                            data={"grant_type": "client_credentials"})
+            log.debug("OAuth response status: %s", r.status_code)
+            r.raise_for_status()
+            data = r.json()
+            token = data.get("access_token")
+            if not token:
+                log.error("No access_token found in OAuth response.")
+                raise SystemExit(4)
+            return token
+    except httpx.HTTPStatusError as e:
+        log.error("PayPal OAuth failed (%s): %s", e.response.status_code, e.response.text)
+        raise SystemExit(2)
