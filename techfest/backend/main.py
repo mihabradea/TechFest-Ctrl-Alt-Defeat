@@ -66,7 +66,7 @@ async def get_state():
     return response
 
 # --- OAuth callback endpoint: handles PayPal redirect after user login ---
-@app.get("/callback")
+@app.post("/callback")
 async def paypal_callback(request: Request):
     print("Received callback with query params:", request.query_params)
     params = dict(request.query_params)  # Extract query parameters from PayPal
@@ -98,7 +98,6 @@ async def paypal_callback(request: Request):
         token_res = await client.post(
             f"{paypal_base}/v1/oauth2/token",
             auth=basic_auth,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
             data={
                 "grant_type": "authorization_code",
                 "code": code,
@@ -109,7 +108,6 @@ async def paypal_callback(request: Request):
         raise HTTPException(status_code=502, detail=f"Token exchange failed: {detail}")
 
     tokens = token_res.json()
-    print("Received tokens:", tokens)
 
     # Build response in requested format
     response_data = {
