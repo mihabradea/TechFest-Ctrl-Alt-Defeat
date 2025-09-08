@@ -1,19 +1,24 @@
 from fastapi import UploadFile, File, HTTPException, FastAPI, Depends, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 import tempfile, os
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from fastapi.responses import FileResponse
 from techfest.backend.text_speech.speech_to_text import transcribe_wav_file
 from techfest.backend.text_speech.text_to_speech import text_to_mp3
+from techfest.backend.db import models
+from techfest.backend.db.database import engine, get_db
+from sqlalchemy.orm import Session
 
 from techfest.backend.auth.jwt_auth import (
-    _authenticate_user,
-    _create_access_token,
     require_active_token,
-    BLACKLISTED_JTIS,
+    create_access_token_db,
+    revoke_current_token,
+    get_or_create_user_by_email,
 )
 
 #run command for testing: uvicorn techfest.backend.main:app --reload
+
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
@@ -28,40 +33,33 @@ protected = APIRouter(dependencies=[Depends(require_active_token)])
 app.include_router(protected)
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    email: EmailStr
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
 @app.post("/login", response_model=TokenResponse)
-def login(req: LoginRequest):
+def login(req: LoginRequest, db: Session = Depends(get_db)):
     """
-    Authenticate user and return a JWT access token.
-    Body (JSON): { "username": "alice", "password": "password123" }
+    Accepts an already verified email from a third-party identity provider.
+    Stores only the email, issues an API access token, and persists token status in DB.
     """
-    user = _authenticate_user(req.username, req.password)
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials.", headers={"WWW-Authenticate": "Bearer"})
-    token = _create_access_token(subject=req.username)
-    return TokenResponse(access_token=token)
+    user = get_or_create_user_by_email(db, req.email)
+    jwt_token = create_access_token_db(db, subject=user.email, user_id=user.id)
+    return TokenResponse(access_token=jwt_token)
 
 @app.post("/logout")
-def logout(payload: dict = Depends(require_active_token)):
-    """
-    Blacklist the current access token so it can’t be used again.
-    Requires Authorization: Bearer <access_token>
-    """
-    jti = payload.get("jti")
-    if jti:
-        BLACKLISTED_JTIS.add(jti)
+def logout(payload: dict = Depends(require_active_token), db: Session = Depends(get_db)):
+    revoke_current_token(payload, db)
     return {"status": "logged_out"}
 
 # Optional: protected demo route
 @app.get("/me")
-def me(payload: dict = Depends(require_active_token)):
-    return {"user": payload.get("sub")}
+def me(payload: dict = Depends(require_active_token), db: Session = Depends(get_db)):
+    email = payload.get("sub")
+    user = db.query(models.User).filter(models.User.email == email).first()
+    return {"user": {"email": email}}
 
 @app.post("/stt")
 async def stt(file: UploadFile = File(...), payload: dict = Depends(require_active_token)):
