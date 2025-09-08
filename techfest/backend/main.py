@@ -2,11 +2,9 @@
 # FastAPI and related modules for API server and request handling
 from fastapi import FastAPI, Request, Response, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
-from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 import os
 from urllib.parse import urlencode
-import uvicorn
 import secrets
 import httpx
 # For securely signing/verifying state values
@@ -63,8 +61,8 @@ class TTSRequest(BaseModel):
     download: bool = False
 
 # --- PayPal and app configuration from environment ---
-client_id = os.getenv("CLIENT_ID")
-client_secret = os.getenv("CLIENT_SECRET")
+client_id = os.getenv("CLIENT_ID", "AUwDbh92cYpOxREvA3aeugMEfJdMH5U-HwMvLi0z-ABQQ0puDUd1ijGzFsh6s7ugl2zisrqI4tZGYRAT")
+client_secret = os.getenv("CLIENT_SECRET","EL9UjcK_RLn94hX6HaDKhGfLXPh4L-_RAU-kUtVJZdlQGRbT2re1iiTTjFccDKczOjUZjLyAKUckTERG")
 pp_env = os.getenv("PP_ENV", "sandbox")  # "sandbox" or "live"
 paypal_base = os.getenv("PAYPAL_BASE", "https://api-m.sandbox.paypal.com")
 return_url = os.getenv("RETURN_URL", "http://localhost:8000/callback")
@@ -85,6 +83,7 @@ async def get_state():
 # --- OAuth callback endpoint: handles PayPal redirect after user login ---
 @app.get("/callback")
 async def paypal_callback(request: Request):
+    print("Received callback with query params:", request.query_params)
     params = dict(request.query_params)  # Extract query parameters from PayPal
     error = params.get("error")
     if error:
@@ -125,6 +124,7 @@ async def paypal_callback(request: Request):
         raise HTTPException(status_code=502, detail=f"Token exchange failed: {detail}")
 
     tokens = token_res.json()
+    print("Received tokens:", tokens)
 
     # Build response in requested format
     response_data = {
