@@ -3,6 +3,8 @@ from typing import Dict, Generator, Iterable, Tuple
 from datetime import datetime, timedelta, timezone
 import requests
 from .config import paypal_base_url
+from .auth import fetch_paypal_token
+from .storage import ingest_to_sqlite, export_csv, DB_PATH_DEFAULT
 
 log = logging.getLogger("paypalx.transactions")
 
@@ -101,3 +103,35 @@ def print_transaction_summary(txn: Dict) -> None:
             email=payer.get("email_address", "-"),
         )
     )
+
+
+OUTPUT_CSV = "out/txns_last90d.csv"
+
+
+def save_transactions(token):
+    # 90-day window (the fetcher handles 31-day chunking/pagination)
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(days=90)
+
+    log.info("Fetching PayPal transactions for last 90 days: %s → %s",
+             start_time.isoformat(), end_time.isoformat())
+
+
+
+    # Fetch iterator
+    txns_iter = fetch_transactions(
+        start_dt=start_time,
+        end_dt=end_time,
+        access_token=token,
+        page_size=500,
+        balance_affecting_only=True,
+    )
+
+    # Ingest into a fresh SQLite (scoped to this 90d window), then export CSV
+    rows = ingest_to_sqlite(txns_iter, db_path=DB_PATH_DEFAULT)
+    log.info("Ingested/updated %d transactions into %s", rows, DB_PATH_DEFAULT)
+
+    exported = export_csv(DB_PATH_DEFAULT, OUTPUT_CSV)
+    log.info("Exported %d rows to %s", exported, OUTPUT_CSV)
+
+    print(f"Done. CSV at: {OUTPUT_CSV}")

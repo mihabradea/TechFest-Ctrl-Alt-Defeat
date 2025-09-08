@@ -1,10 +1,11 @@
 import os
 import logging
-from datetime import datetime, timedelta, timezone
 
-# (Optional) your agent import stays — not used here, but harmless to keep.
-# from agents import Runner
-# from backend.tools_paypal_agent.agents_class import agent
+from backend.paypal_transactions.transactions import save_transactions
+from paypal_transactions.auth import fetch_paypal_token
+from paypal_transactions.notify import notify_same_day_last_month, notify_about_last_unpaid_invoice
+from paypal_transactions.notify import show_recurring_same_day_last_3_months
+from paypal_transactions.invoicing import list_unpaid_or_sent, list_any_invoices
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -14,41 +15,30 @@ logging.basicConfig(
 )
 log = logging.getLogger("main")
 
-# Our package
-from paypal_transactions.auth import fetch_paypal_token
-from paypal_transactions.transactions import fetch_transactions
-from paypal_transactions.storage import ingest_to_sqlite, export_csv, DB_PATH_DEFAULT
-
 OUTPUT_CSV = "out/txns_last90d.csv"
 
+def debug_list_invoices(token: str):
+    data = list_unpaid_or_sent(token, days=365)
+    print("unpaid/sent count:", len(data.get("items", [])))
+
+    # 2) If still empty, list *any* invoices visible to this token
+    all_data = list_any_invoices(token)
+    items = all_data.get("items", [])
+    print("visible invoices:", len(items))
+    print({(it.get("detail") or {}).get("status") for it in items})  # which statuses?
+
+
+
 def main():
-    # 90-day window (the fetcher handles 31-day chunking/pagination)
-    end_time = datetime.now(timezone.utc)
-    start_time = end_time - timedelta(days=90)
-
-    log.info("Fetching PayPal transactions for last 90 days: %s → %s",
-             start_time.isoformat(), end_time.isoformat())
-
     # OAuth
     token = fetch_paypal_token()
+    save_transactions(token)
+    notify_about_last_unpaid_invoice(token)
+    notify_same_day_last_month(OUTPUT_CSV)
 
-    # Fetch iterator
-    txns_iter = fetch_transactions(
-        start_dt=start_time,
-        end_dt=end_time,
-        access_token=token,
-        page_size=500,
-        balance_affecting_only=True,
-    )
+    show_recurring_same_day_last_3_months("out/txns_last90d.csv")
 
-    # Ingest into a fresh SQLite (scoped to this 90d window), then export CSV
-    rows = ingest_to_sqlite(txns_iter, db_path=DB_PATH_DEFAULT)
-    log.info("Ingested/updated %d transactions into %s", rows, DB_PATH_DEFAULT)
 
-    exported = export_csv(DB_PATH_DEFAULT, OUTPUT_CSV)
-    log.info("Exported %d rows to %s", exported, OUTPUT_CSV)
-
-    print(f"Done. CSV at: {OUTPUT_CSV}")
 
 if __name__ == "__main__":
     main()
