@@ -21,7 +21,7 @@ export default function App() {
           login.render({
             authend: "sandbox",
             appid: "AUwDbh92cYpOxREvA3aeugMEfJdMH5U-HwMvLi0z-ABQQ0puDUd1ijGzFsh6s7ugl2zisrqI4tZGYRAT",
-            scopes: "email",
+            scopes: "openid email https://uri.paypal.com/services/paypalattributes https://uri.paypal.com/services/invoicing",
             containerid: "lippButton",
             responseType: "code",
             locale: "en-us",
