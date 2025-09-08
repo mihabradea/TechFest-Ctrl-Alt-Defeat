@@ -60,6 +60,9 @@ def _last_month_same_day_or_prev_friday(today_utc: datetime) -> date:
         d = d - timedelta(days=1)
     return d
 
+
+
+
 def notify_same_day_last_month(csv_path: str) -> Tuple[str, Optional[Dict]]:
     """
     Returns (message, row_dict_or_None). If no matching transaction, row is None.
@@ -112,17 +115,15 @@ def notify_same_day_last_month(csv_path: str) -> Tuple[str, Optional[Dict]]:
 
     return (message, row)
 
-def notify_about_last_unpaid_invoice(token: str):
-
-    invoice_id, pay_url = build_pay_link_for_last_unpaid(token)
-
-    if invoice_id and pay_url:
-        print(f"Latest unpaid invoice {invoice_id}: {pay_url}")
-    elif invoice_id and not pay_url:
-        print(f"Latest unpaid invoice {invoice_id} found, but no payer link was returned.")
-    else:
-        print("No unpaid/sent invoices found.")
-
+def build_pay_link_for_last_unpaid(token: str) -> Tuple[Optional[str], Optional[str]]:
+    listing = _list_unpaid_invoices(token, page=1, page_size=50)
+    items = listing.get("items") or []
+    inv_id = _pick_latest_invoice_id(items)
+    if not inv_id:
+        return None, None
+    used_id, url = build_pay_link_for_invoice(token, inv_id)
+    assert isinstance(used_id, str) or used_id is None
+    return used_id, url
 
 def _same_day_k_months_ago_or_prev_friday(today_utc: datetime, k: int) -> date:
     """Same calendar day k months ago; if weekend, roll back to previous Friday (stays in that month)."""
