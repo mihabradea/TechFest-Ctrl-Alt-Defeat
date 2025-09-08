@@ -29,8 +29,9 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
-    allow_methods=["*"],
+    allow_origins=[os.getenv("CORS_ORIGIN", "http://localhost:5173")],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -43,12 +44,6 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-
-
-class TTSRequest(BaseModel):
-    text: str
-    filename: str | None = None
-    download: bool = False
 
 # --- PayPal and app configuration from environment ---
 client_id = os.getenv("CLIENT_ID", "AUwDbh92cYpOxREvA3aeugMEfJdMH5U-HwMvLi0z-ABQQ0puDUd1ijGzFsh6s7ugl2zisrqI4tZGYRAT")
@@ -213,6 +208,10 @@ async def stt(file: UploadFile = File(...), payload: dict = Depends(require_acti
             except Exception:
                 pass
 
+class TTSRequest(BaseModel):
+    text: str
+    filename: str | None = None
+    download: bool = False
 
 @app.post("/tts")
 def tts(req: TTSRequest, payload: dict = Depends(require_active_token)):
