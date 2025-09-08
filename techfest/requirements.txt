@@ -1,1 +1,8 @@
 openai
+fastapi
+uvicorn
+python-multipart
+aiofiles
+gtts
+python-jose[cryptography]
+passlib[bcrypt]
