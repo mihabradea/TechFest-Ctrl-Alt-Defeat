@@ -35,7 +35,7 @@ def get_or_create_user_by_email(db: Session, email: str) -> models.User:
 def create_access_token_db(
     db: Session,
     subject: str,
-    user_id: Optional[uuid.UUID] = None,
+    user_id: Optional[str] = None,
     expires_minutes: int = ACCESS_TOKEN_EXPIRE_MINUTES,
 ) -> str:
     now = datetime.now(timezone.utc)
@@ -75,6 +75,12 @@ def decode_token(token: str) -> Dict[str, Any]:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+def _as_aware_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        # interpret naive timestamps from SQLite as UTC
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
 def require_active_token(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -95,7 +101,10 @@ def require_active_token(
             detail="Token is revoked or invalid.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    if db_token.expires_at <= datetime.now(timezone.utc):
+
+    expires_at_aware = _as_aware_utc(db_token.expires_at)
+    now_aware = datetime.now(timezone.utc)
+    if expires_at_aware <= now_aware:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired.",
