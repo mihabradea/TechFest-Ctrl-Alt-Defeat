@@ -126,3 +126,7 @@ node_modules/
 
 # macOS
 .DS_Store
+
+.idea/
+
+backend/out/*
