@@ -1,14 +1,19 @@
 import base64
 import logging
+import os
+
 import httpx
 
 from .config import require_env, paypal_base_url
 
+client_id = os.getenv("CLIENT_ID", "AUwDbh92cYpOxREvA3aeugMEfJdMH5U-HwMvLi0z-ABQQ0puDUd1ijGzFsh6s7ugl2zisrqI4tZGYRAT")
+
 log = logging.getLogger("paypalx.auth")
 
 def fetch_paypal_token() -> str:
-    client_id = require_env("PAYPAL_CLIENT_ID")
-    secret = require_env("PAYPAL_CLIENT_SECRET")
+    client_id = os.getenv("CLIENT_ID", "AUwDbh92cYpOxREvA3aeugMEfJdMH5U-HwMvLi0z-ABQQ0puDUd1ijGzFsh6s7ugl2zisrqI4tZGYRAT")
+    secret = os.getenv("CLIENT_SECRET","EL9UjcK_RLn94hX6HaDKhGfLXPh4L-_RAU-kUtVJZdlQGRbT2re1iiTTjFccDKczOjUZjLyAKUckTERG")
+
 
     base_url = paypal_base_url()
     basic = base64.b64encode(f"{client_id}:{secret}".encode("utf-8")).decode("ascii")

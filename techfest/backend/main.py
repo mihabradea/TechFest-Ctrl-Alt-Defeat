@@ -243,7 +243,7 @@ def tts(req: TTSRequest, payload: dict = Depends(require_active_token)):
 
 
 
-@app.get("/api/unpaid-invoices", response_model=UnpaidInvoicesResponse)
+@app.get("/unpaid-invoices", response_model=UnpaidInvoicesResponse)
 def get_unpaid_invoices(page_size: int = 50, page: int = 1, payload: dict = Depends(require_active_token)):
     """
     Returns unpaid/sent invoices for the ISSUING business (sandbox/live per PAYPAL_ENV),
@@ -263,7 +263,7 @@ def get_unpaid_invoices(page_size: int = 50, page: int = 1, payload: dict = Depe
         raise HTTPException(status_code=502, detail=f"Failed to list unpaid invoices: {e}")
 
 
-@app.post("/api/unpaid-invoices/notify", response_model=UnpaidInvoicesResponse)
+@app.post("/unpaid-invoices/notify", response_model=UnpaidInvoicesResponse)
 def notify_unpaid_invoices(payload: dict = Depends(require_active_token)):
     """
     'Notification' variant – same payload as GET but intended to be called by a scheduler.
@@ -280,7 +280,7 @@ def notify_unpaid_invoices(payload: dict = Depends(require_active_token)):
     return resp
 
 
-@app.get("/api/recurring/same-day", response_model=RecurringResponse)
+@app.get("/recurring/same-day", response_model=RecurringResponse)
 def get_recurring_same_day(
         csv_path: str = Query("/techfest/backend/out/txns_last90d.csv"),
         days: int = Query(90, ge=1, le=365),
@@ -300,7 +300,7 @@ def get_recurring_same_day(
         raise HTTPException(status_code=500, detail=f"Failed to compute recurring payments: {e}")
 
 
-@app.post("/api/recurring/same-day/notify/")  # tolerate trailing slash
+@app.post("/recurring/same-day/notify")  # tolerate trailing slash
 def notify_recurring_same_day(
         csv_path: str = Query("out/txns_last90d.csv"),
         days: int = Query(90, ge=1, le=365),
