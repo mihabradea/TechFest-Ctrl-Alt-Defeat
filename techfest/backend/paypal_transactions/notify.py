@@ -3,9 +3,10 @@ import csv
 import os
 from datetime import datetime, timedelta, timezone, date
 from typing import Dict, Optional, Tuple, List
-from .auth import fetch_paypal_token
-from .invoicing import build_pay_link_for_last_unpaid
-from .invoicing import show_invoice
+from techfest.backend.paypal_transactions.auth import fetch_paypal_token_for_issuer
+from techfest.backend.paypal_transactions.invoicing import _list_unpaid_invoices, build_pay_link_for_invoice, \
+    _pick_latest_invoice_id
+
 
 def _norm(s: str) -> str:
     return s.strip().lower().replace(" ", "_")
@@ -266,3 +267,37 @@ def show_recurring_same_day_last_3_months(csv_path: str) -> List[Dict]:
         })
 
     return results
+
+
+def unpaid_invoice_notification():
+    token = fetch_paypal_token_for_issuer()
+
+    page = 1
+    page_size = 50
+    total_found = 0
+
+    while True:
+        data = _list_unpaid_invoices(token, page=page, page_size=page_size)
+        items = data.get("items") or []
+
+        if page == 1 and not items:
+            print("No unpaid/sent invoices found.")
+            return
+        print("Here are your unpaid/sent invoices with payment links:")
+        for it in items:
+            inv_id = it.get("id")
+                # Build/ensure a payer link using your existing helper
+            used_id, pay_url = build_pay_link_for_invoice(token, inv_id)
+                # Try to show a nicer label if available
+            detail = (it.get("detail") or {})
+            number = detail.get("invoice_number") or used_id
+            print(f"- {number}: {pay_url or '(no payer link yet)'}")
+            total_found += 1
+
+            # Simple pagination: stop if fewer than page_size returned
+        if len(items) < page_size:
+            break
+        page += 1
+
+    if total_found == 0:
+        print("No unpaid/sent invoices found.")

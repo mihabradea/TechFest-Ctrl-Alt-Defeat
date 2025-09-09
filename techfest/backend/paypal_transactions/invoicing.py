@@ -3,7 +3,7 @@ from typing import Optional, Tuple, List, Dict
 import requests
 from datetime import datetime, timezone
 
-from backend.paypal_transactions import config  # absolute module import
+from techfest.backend.paypal_transactions import config  # absolute module import
 
 # ----------------- headers -----------------
 def _headers(token: str) -> Dict[str, str]:
@@ -109,7 +109,7 @@ def build_pay_link_for_last_unpaid(token: str) -> Tuple[Optional[str], Optional[
 # ----------------- PUBLIC: other-business credentials -> pay link -----------------
 # If you use a helper like fetch_paypal_token_for, import it here:
 try:
-    from backend.paypal_transactions.auth import fetch_paypal_token_for  # your earlier helper
+    from techfest.backend.paypal_transactions.auth import fetch_paypal_token_for  # your earlier helper
 except Exception:
     fetch_paypal_token_for = None  # optional
 
