@@ -3,7 +3,7 @@ import dotenv
 import json
 import openai
 
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 
 class PayPalService:
@@ -41,8 +41,8 @@ class PayPalService:
                 tools=self.__config['prompts']['tools']
             )
 
-            print(f'\n\nResponse: {response}\n\n')
-            print(f'Choices: {response.choices}\n\n')
+            # print(f'\n\nResponse: {response}\n\n')
+            # print(f'Choices: {response.choices}\n\n')
 
             if not hasattr(response, "choices") or not response.choices:
                 raise Exception("No response from AI model")
@@ -54,8 +54,8 @@ class PayPalService:
                 tool_name = tool_call.function.name
                 tool_input = tool_call.function.arguments
 
-                print(f"Calling tool: {tool_name}")
-                print(f"Arguments: {tool_input}")
+                # print(f"Calling tool: {tool_name}")
+                # print(f"Arguments: {tool_input}")
 
                 messages.append({
                     'role': 'assistant',

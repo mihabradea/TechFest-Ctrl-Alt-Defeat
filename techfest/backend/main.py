@@ -1,9 +1,11 @@
 from flask import Flask
 from flask import request
-from paypal_service import PayPalService
-from paypal_api import PayPalAPI
+from core.paypal_service import PayPalService
+from core.paypal_api import PayPalAPI
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 paypal_api = PayPalAPI()
 paypal_service = PayPalService(paypal_api)
@@ -24,6 +26,8 @@ def get_invoices():
 def chat():
     messages = request.get_json()
 
+    print(f"Received messages: {messages}")
+
     res = paypal_service.call_model(messages)
 
-    return f"Received message: {res}"
+    return {"reply": res}

@@ -17,7 +17,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 type Role = "user" | "assistant" | "system";
 type Message = { id: string; role: Role; text: string; pending?: boolean };
 
-const MOCK_MODE = process.env.EXPO_PUBLIC_MOCK !== "false"; // default true unless you set it to "false"
+// const MOCK_MODE = process.env.EXPO_PUBLIC_MOCK !== "false"; // default true unless you set it to "false"
+const MOCK_MODE = false; // For demo purposes, always true 
 
 export default function ChatScreen() {
   const [input, setInput] = useState("");
@@ -58,13 +59,10 @@ export default function ChatScreen() {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({
-        messages: [
-          // You can send the full history if your backend expects it
-          ...messages.map(({ role, text }) => ({ role, content: text })),
-          { role: "user", content: userText },
-        ],
-      }),
+      body: JSON.stringify([
+        ...messages.map(({ role, text }) => ({ role: role, content: text })),
+        { role: "user", content: userText },
+      ]),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
