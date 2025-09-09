@@ -11,6 +11,8 @@ import tempfile, os
 from pydantic import BaseModel, EmailStr
 from fastapi.responses import FileResponse
 
+from techfest.backend.core.paypal_api import PayPalAPI
+from techfest.backend.core.paypal_service import PayPalService
 from techfest.backend.paypal_transactions.csv_export import ensure_csv
 from techfest.backend.paypal_transactions.invoicing import _list_unpaid_invoices
 from techfest.backend.paypal_transactions.recurring_api import RecurringResponse
@@ -50,6 +52,9 @@ app.add_middleware(
 
 protected = APIRouter(dependencies=[Depends(require_active_token)])
 app.include_router(protected)
+
+paypal_api = PayPalAPI()
+paypal_service = PayPalService(paypal_api)
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -325,3 +330,10 @@ def notify_recurring_same_day(
         raise HTTPException(status_code=404, detail=f"CSV not found at {csv_path}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to compute recurring payments: {e}")
+
+@app.post('/chat')
+def chat(request: Request, payload: dict = Depends(require_active_token)):
+    messages = request.query_params
+    print(f"Received messages: {messages}")
+    res = paypal_service.call_model(messages)
+    return {"reply": res}
