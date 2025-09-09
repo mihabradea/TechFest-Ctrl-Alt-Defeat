@@ -1,5 +1,4 @@
 import os
-import dotenv
 import json
 import openai
 
@@ -9,12 +8,11 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 class PayPalService:
 
     def __init__(self, paypal_api):
-        dotenv.load_dotenv()
         self.__load_config()
 
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.openai_client = openai.Client(
-            api_key=os.getenv("OPENAI_API_KEY")
+            api_key=self.openai_api_key
         )
 
         self.paypal_api = paypal_api

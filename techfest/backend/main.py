@@ -1,3 +1,6 @@
+import dotenv
+dotenv.load_dotenv()
+
 from typing import List, Dict
 
 from fastapi import FastAPI, Request, Response, HTTPException, Body, Query
@@ -332,8 +335,8 @@ def notify_recurring_same_day(
         raise HTTPException(status_code=500, detail=f"Failed to compute recurring payments: {e}")
 
 @app.post('/chat')
-def chat(request: Request, payload: dict = Depends(require_active_token)):
-    messages = request.query_params
+def chat(messages: List[Dict] = Body(...)):
+
     print(f"Received messages: {messages}")
     res = paypal_service.call_model(messages)
     return {"reply": res}
