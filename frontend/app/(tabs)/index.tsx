@@ -3,6 +3,7 @@ import { ActivityIndicator, View } from "react-native";
 import { Redirect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+
 export default function Index() {
   // const [token, setToken] = useState<string | null | undefined>(undefined);
 
@@ -26,5 +27,8 @@ export default function Index() {
   // }
 
   // return token ? <Redirect href="/" /> : <Redirect href="/login" />;
-  return <Redirect href="/chat" />
+  return <Redirect href="/login" />
+
+
+  // return <Redirect href="/chat" />
 }
