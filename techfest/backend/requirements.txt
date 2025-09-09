@@ -1,3 +1,5 @@
 paypal-agent-toolkit
 flask
 flask-cors
+dotenv
+openai

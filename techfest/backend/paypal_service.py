@@ -1,51 +1,100 @@
 import os
-from dotenv import load_dotenv
-from paypal_agent_toolkit.openai.toolkit import PayPalToolkit
-from paypal_agent_toolkit.shared.configuration import Configuration, Context
-from agents import Agent, Runner, set_default_openai_key
+import dotenv
+import json
+import openai
 
-load_dotenv()
-client_id = os.getenv("PAYPAL_CLIENT_ID")
-client_secret = os.getenv("PAYPAL_CLIENT_SECRET")
-openai_api_key = os.getenv("OPENAI_API_KEY")
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__)))
 
 
 class PayPalService:
-    def __init__(self):
 
-        config = Configuration(
-            actions={
-                "orders": {
-                    "create": True,
-                    "get": True,
-                    "capture": True
-                }
+    def __init__(self, paypal_api):
+        dotenv.load_dotenv()
+        self.__load_config()
+
+        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+        self.openai_client = openai.Client(
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
+
+        self.paypal_api = paypal_api
+
+    def call_model(self, messages=[]):
+        """
+        Handle user message and decide what actions to take
+        """
+
+        messages = [
+            {
+                'role': 'user',
+                'content': self.__config['prompts']['system_prompt']
             },
-            context=Context(sandbox=True)
-        )
+            *messages
+        ]
 
-        toolkit = PayPalToolkit(
-            client_id=client_id,
-            secret=client_secret,
-            configuration=config
-        )
+        MAX_ITERATIONS = 4
+        for _ in range(MAX_ITERATIONS):
 
-        tools = toolkit.get_tools()
+            response = self.openai_client.chat.completions.create(
+                model="gpt-5-nano",
+                messages=messages,
+                tools=self.__config['prompts']['tools']
+            )
 
-        set_default_openai_key(os.getenv("OPENAI_API_KEY"))
+            print(f'\n\nResponse: {response}\n\n')
+            print(f'Choices: {response.choices}\n\n')
 
-        self.agent = Agent(
-            name="PayPal Agent",
-            instructions="You are a helpful assistant that helps users with PayPal transactions.",
-            tools=tools
-        )
+            if not hasattr(response, "choices") or not response.choices:
+                raise Exception("No response from AI model")
 
-    def process_query(self, message):
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        result = Runner.run_sync(self.agent, message)
-        return result
+            response_message = response.choices[0].message
+
+            if hasattr(response_message, 'tool_calls') and response_message.tool_calls:
+                tool_call = response_message.tool_calls[0]
+                tool_name = tool_call.function.name
+                tool_input = tool_call.function.arguments
+
+                print(f"Calling tool: {tool_name}")
+                print(f"Arguments: {tool_input}")
+
+                messages.append({
+                    'role': 'assistant',
+                    'content': response_message.content if hasattr(response_message, 'content') else None,
+                    'tool_calls': [
+                        {
+                            'id': tool_call.id,
+                            'type': 'function',
+                            'function': {
+                                'name': tool_name,
+                                'arguments': tool_input
+                            }
+                        }
+                    ]
+                })
+
+                tool_response = self.__call_tool(tool_name, tool_input)
+
+                messages.append({
+                    'role': 'tool',
+                    'content': str(tool_response),
+                    'tool_call_id': tool_call.id
+                })
+
+                print(f"Tool response: {tool_response}")
+
+            else:
+                return response_message.content
+
+    def __call_tool(self, tool_name, tool_input):
+        match tool_name:
+            case "get_invoices":
+                return self.paypal_api.get_invoices()
+            case "create_invoice":
+                invoice_data = json.loads(tool_input)
+                return self.paypal_api.create_invoice(invoice_data)
+            case _:
+                return f"Unknown tool: {tool_name}"
+
+    def __load_config(self):
+        with open(os.path.join(ROOT_DIR, 'config.json'), 'r') as f:
+            self.__config = json.load(f)

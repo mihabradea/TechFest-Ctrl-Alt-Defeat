@@ -1,0 +1,135 @@
+{
+    "openai": {
+        "model": "gpt-5-nano",
+        "temperature": 0.3
+    },
+    "prompts": {
+        "system_prompt": "You are a careful PayPal-style payments assistant for <AppName>.\nAlways prefer calling tools over answering from memory.\nBefore any money-out action, confirm recipient, amount, and currency.\nIf multiple contacts match, ask to disambiguate; otherwise proceed.\nBe concise and user-facing; don't reveal internal reasoning.\nIf information is missing (amount, recipient, currency), ask a single targeted question. After an action is completed, return the function call result to the user AS IS.",
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_invoices",
+                    "description": "Fetch the list of invoices",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                        "additionalProperties": false
+                    },
+                    "strict": true
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "create_invoice",
+                    "description": "Create a new invoice",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "primary_recipients": {
+                                "type": "array",
+                                "description": "List of recipients",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "billing_info": {
+                                            "type": "object",
+                                            "description": "Business name of the recipient",
+                                            "properties": {
+                                                "business_name": {
+                                                    "type": "string",
+                                                    "description": "Business name of the recipient"
+                                                },
+                                                "email_address": {
+                                                    "type": "string",
+                                                    "description": "Email address of the recipient"
+                                                }
+                                            },
+                                            "required": [
+                                                "business_name",
+                                                "email_address"
+                                            ],
+                                            "additionalProperties": false
+                                        }
+                                    },
+                                    "required": ["billing_info"],
+                                    "additionalProperties": false
+                                },
+                                "minItems": 1
+                            },
+                            "items": {
+                                "type": "array",
+                                "description": "List of items in the invoice",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "type": "string",
+                                            "description": "Name of the item"
+                                        },
+                                        "quantity": {
+                                            "type": "string",
+                                            "description": "Quantity of the item. A number as a string."
+                                        },
+                                        "unit_amount": {
+                                            "type": "object",
+                                            "description": "Unit amount of the item",
+                                            "properties": {
+                                                "currency_code": {
+                                                    "type": "string",
+                                                    "description": "Currency code (e.g., USD)"
+                                                },
+                                                "value": {
+                                                    "type": "string",
+                                                    "description": "Value of the unit amount"
+                                                }
+                                            },
+                                            "required": [
+                                                "currency_code",
+                                                "value"
+                                            ],
+                                            "additionalProperties": false
+                                        },
+                                        "description": {
+                                            "type": "string",
+                                            "description": "Description of the item"
+                                        }
+                                    },
+                                    "required": [
+                                        "name",
+                                        "quantity",
+                                        "unit_amount",
+                                        "description"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                "minItems": 1
+                            },
+                            "detail": {
+                                "type": "object",
+                                "description": "Details of the invoice",
+                                "properties": {
+                                    "currency_code": {
+                                        "type": "string",
+                                        "description": "Currency code (e.g., USD)"
+                                    },
+                                    "note": {
+                                        "type": "string",
+                                        "description": "Note for the invoice."
+                                    }
+                                },
+                                "required": ["currency_code", "note"],
+                                "additionalProperties": false
+                            }
+                        },
+                        "required": ["primary_recipients", "items", "detail"],
+                        "additionalProperties": false
+                    },
+                    "strict": true
+                }
+            }
+        ]
+    }
+}
