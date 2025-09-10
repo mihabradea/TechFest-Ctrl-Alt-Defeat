@@ -20,7 +20,8 @@ from techfest.backend.paypal_transactions.csv_export import ensure_csv
 from techfest.backend.paypal_transactions.invoicing import _list_unpaid_invoices
 from techfest.backend.paypal_transactions.recurring_api import RecurringResponse
 from techfest.backend.paypal_transactions.unpaid_invoices_api import UnpaidInvoicesResponse, _map_invoice_with_link
-from techfest.backend.text_speech.speech_to_text import transcribe_wav_file
+from techfest.backend.text_speech.speech_to_text import transcribe_wav_file, WAV_TYPES, ALLOWED, save_upload_to_tmp, \
+    ffmpeg_to_wav, CONTENT_SUFFIX
 from techfest.backend.text_speech.text_to_speech import text_to_mp3
 from techfest.backend.db import models
 from techfest.backend.db.database import engine, get_db
@@ -196,24 +197,42 @@ def me(payload: dict = Depends(require_active_token), db: Session = Depends(get_
     return {"user": {"email": email}}
 
 @app.post("/stt")
-async def stt(file: UploadFile = File(...), payload: dict = Depends(require_active_token)):
+async def stt(file: UploadFile = File(...), payload: Dict = Depends(require_active_token)):
     """
-    Receives a .wav file from the frontend and returns a JSON { "text": "<transcript>" }.
-    Requires login (Bearer token).
+    Accepts .wav, .mp4 (audio/video), or .webm (audio/video).
+    If not WAV, converts to 16 kHz mono WAV before transcribing.
+    Returns: { "text": "<transcript>" }
     """
-    if file.content_type not in {"audio/wav", "audio/x-wav", "audio/wave"}:
-        raise HTTPException(status_code=400, detail="Please upload a WAV file.")
+    # Normalize content type (strip parameters like "; codecs=opus")
+    ctype = (file.content_type or "").split(";")[0].strip().lower()
 
-    tmp_path = None
+    if ctype not in ALLOWED:
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported media type. Please upload a WAV, MP4, or WEBM file."
+        )
+
+    tmp_input = None
+    tmp_wav = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp_path = tmp.name
-            contents = await file.read()
-            if not contents:
-                raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-            tmp.write(contents)
+        # Choose suffix based on content type (fallback to filename extension if needed)
+        suffix = CONTENT_SUFFIX.get(ctype)
+        if not suffix:
+            _, ext = os.path.splitext(file.filename or "")
+            suffix = ext if ext else ".bin"
 
-        text = transcribe_wav_file(tmp_path)
+        tmp_input = await save_upload_to_tmp(file, suffix=suffix)
+
+        # If it's already WAV, transcribe directly; else convert → WAV first
+        if ctype in WAV_TYPES:
+            wav_path = tmp_input
+            tmp_input = None  # we'll delete in finally via wav_path cleanup
+        else:
+            tmp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
+            ffmpeg_to_wav(tmp_input, tmp_wav, sr=16000)
+            wav_path = tmp_wav
+
+        text = transcribe_wav_file(wav_path)
         return {"text": text}
 
     except HTTPException:
@@ -221,11 +240,13 @@ async def stt(file: UploadFile = File(...), payload: dict = Depends(require_acti
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+        # Clean up temp files
+        for p in (tmp_input, tmp_wav):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
 
 class TTSRequest(BaseModel):
     text: str
