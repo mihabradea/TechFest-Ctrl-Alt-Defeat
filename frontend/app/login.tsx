@@ -26,6 +26,7 @@ export default function LoginScreen() {
   const slideAnim = useRef(new Animated.Value(50)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
+  const [attemptedLogin, setAttemptedLogin] = useState(false);
 
   useEffect(() => {
     // Entrance animations
@@ -175,23 +176,19 @@ export default function LoginScreen() {
               
               <View style={styles.buttonContainer}>
                 <PayPalLoginButton
-                  onSuccess={async ({ code, state }) => {
-                    // 1) Verify we actually got here:
-                    console.log('PayPal onSuccess code=', code, 'state=', state);
-
-                    // 2) TEMP: pretend we exchanged the code successfully.
-                    //    DO NOT use this in prod.
-                    await AsyncStorage.setItem('token', `DEV_TOKEN_${Date.now()}`);
-
-                    // 3) Navigate into the app so you can continue building screens.
-                    router.replace('/');
-                  }}
-                  onCancel={() => setMsg("Login cancelled")}
-                  onError={(err) => {
-                    const m = err instanceof Error ? err.message : String(err);
-                    setMsg(m);
-                    Alert.alert("PayPal error", m);
-                  }}
+                    onSuccess={async ({ code, state }) => {
+                      setAttemptedLogin(false);
+                      await AsyncStorage.setItem('token', `DEV_TOKEN_${Date.now()}`);
+                      router.replace('/');
+                    }}
+                    onCancel={() => attemptedLogin && setMsg("Login cancelled")}
+                    onError={(err) => {
+                      if (attemptedLogin) {
+                        const m = err instanceof Error ? err.message : String(err);
+                        setMsg(m);
+                        Alert.alert("PayPal error", m);
+                      }
+                    }}
                 />
               </View>
 

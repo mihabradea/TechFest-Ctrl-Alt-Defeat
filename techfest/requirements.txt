@@ -10,3 +10,4 @@ SQLAlchemy>=2.0
 email_validator
 itsdangerous
 dotenv
+imageio-ffmpeg
