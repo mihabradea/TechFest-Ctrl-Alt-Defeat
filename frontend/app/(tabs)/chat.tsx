@@ -14,6 +14,7 @@ import {
   TextInput,
   View,
   Animated,
+  ScrollView,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
@@ -23,8 +24,196 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 type Role = "user" | "assistant" | "system";
 type Message = { id: string; role: Role; text: string; pending?: boolean };
+type NotificationType = "payment" | "security" | "update" | "reminder";
+type Notification = { 
+  id: string; 
+  type: NotificationType; 
+  title: string; 
+  message: string; 
+  timestamp: string;
+  isRead: boolean;
+};
 
 const MOCK_MODE = false;
+
+// Hardcoded notifications data
+const MOCK_NOTIFICATIONS: Notification[] = [
+  {
+    id: "1",
+    type: "payment",
+    title: "Payment Received",
+    message: "You received $125.00 from John Smith for dinner split",
+    timestamp: "2 min ago",
+    isRead: false,
+  },
+  {
+    id: "2",
+    type: "security",
+    title: "Security Alert",
+    message: "New login detected from iPhone 14 Pro in New York",
+    timestamp: "1 hour ago",
+    isRead: false,
+  },
+  {
+    id: "3",
+    type: "payment",
+    title: "Payment Sent",
+    message: "Successfully sent $50.00 to Sarah Johnson",
+    timestamp: "3 hours ago",
+    isRead: true,
+  },
+  {
+    id: "4",
+    type: "update",
+    title: "App Update Available",
+    message: "Version 2.1.0 includes new security features and bug fixes",
+    timestamp: "1 day ago",
+    isRead: true,
+  },
+  {
+    id: "5",
+    type: "reminder",
+    title: "Bill Reminder",
+    message: "Your Netflix subscription payment is due tomorrow",
+    timestamp: "2 days ago",
+    isRead: true,
+  },
+];
+
+// Notification Item Component
+const NotificationItem = ({ 
+  notification, 
+  onPress 
+}: {
+  notification: Notification;
+  onPress: (notification: Notification) => void;
+}) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  const getNotificationIcon = (type: NotificationType) => {
+    switch (type) {
+      case "payment":
+        return "card-outline";
+      case "security":
+        return "shield-checkmark-outline";
+      case "update":
+        return "download-outline";
+      case "reminder":
+        return "time-outline";
+      default:
+        return "notifications-outline";
+    }
+  };
+
+  const getNotificationColor = (type: NotificationType) => {
+    switch (type) {
+      case "payment":
+        return "#00D4FF";
+      case "security":
+        return "#FF6B9D";
+      case "update":
+        return "#4ECDC4";
+      case "reminder":
+        return "#FFE66D";
+      default:
+        return "#FFFFFF";
+    }
+  };
+
+  return (
+    <Animated.View style={[styles.notificationItem, { opacity: fadeAnim }]}>
+      <Pressable 
+        onPress={() => onPress(notification)}
+        style={[
+          styles.notificationContent,
+          !notification.isRead && styles.unreadNotification
+        ]}
+      >
+        <View style={styles.notificationHeader}>
+          <View 
+            style={[
+              styles.notificationIcon, 
+              { backgroundColor: getNotificationColor(notification.type) + '20' }
+            ]}
+          >
+            <Ionicons 
+              name={getNotificationIcon(notification.type) as any} 
+              size={18} 
+              color={getNotificationColor(notification.type)} 
+            />
+          </View>
+          <View style={styles.notificationTextContainer}>
+            <View style={styles.notificationTitleRow}>
+              <Text style={styles.notificationTitle} numberOfLines={1}>
+                {notification.title}
+              </Text>
+              {!notification.isRead && <View style={styles.unreadDot} />}
+            </View>
+            <Text style={styles.notificationTimestamp}>
+              {notification.timestamp}
+            </Text>
+          </View>
+        </View>
+        
+        <Text style={styles.notificationMessage} numberOfLines={2}>
+          {notification.message}
+        </Text>
+      </Pressable>
+    </Animated.View>
+  );
+};
+
+// Notifications Sidebar Component
+const NotificationsSidebar = ({ 
+  notifications, 
+  onNotificationPress 
+}: {
+  notifications: Notification[];
+  onNotificationPress: (notification: Notification) => void;
+}) => {
+  const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  return (
+    <LinearGradient
+      colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)']}
+      style={styles.notificationsSidebar}
+    >
+      <View style={styles.notificationsHeader}>
+        <View style={styles.notificationsHeaderContent}>
+          <Text style={styles.notificationsTitle}>Notifications</Text>
+          {unreadCount > 0 && (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadBadgeText}>{unreadCount}</Text>
+            </View>
+          )}
+        </View>
+        <Ionicons name="notifications-outline" size={20} color="rgba(255, 255, 255, 0.7)" />
+      </View>
+      
+      <ScrollView 
+        style={styles.notificationsList}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.notificationsContent}
+      >
+        {notifications.map((notification) => (
+          <NotificationItem
+            key={notification.id}
+            notification={notification}
+            onPress={onNotificationPress}
+          />
+        ))}
+      </ScrollView>
+    </LinearGradient>
+  );
+};
 
 // Separate component for message items to properly use hooks
 const MessageItem = ({ 
@@ -180,6 +369,8 @@ export default function ChatScreen() {
     },
   ]);
 
+  const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
+
   const listRef = useRef<FlatList>(null);
   const canSend = useMemo(() => input.trim().length > 0 && !sending, [input, sending]);
   const scrollToEnd = useCallback(() => {
@@ -260,6 +451,18 @@ export default function ChatScreen() {
     await Clipboard.setStringAsync(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleNotificationPress = (notification: Notification) => {
+    // Mark notification as read
+    setNotifications(prev => 
+      prev.map(n => 
+        n.id === notification.id ? { ...n, isRead: true } : n
+      )
+    );
+    
+    // You can add additional logic here, like navigating to a specific screen
+    console.log('Notification pressed:', notification);
   };
 
   useEffect(() => {
@@ -474,67 +677,76 @@ export default function ChatScreen() {
           />
         </View>
 
-        <KeyboardAvoidingView
-          style={styles.container}
-          behavior={Platform.select({ ios: "padding", android: undefined, default: undefined })}
-          keyboardVerticalOffset={Platform.select({ ios: 64, default: 0 })}
-        >
-          {/* Header */}
-          <LinearGradient
-            colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
-            style={styles.header}
+        <View style={styles.mainContainer}>
+          {/* Chat Section */}
+          <KeyboardAvoidingView
+            style={styles.chatContainer}
+            behavior={Platform.select({ ios: "padding", android: undefined, default: undefined })}
+            keyboardVerticalOffset={Platform.select({ ios: 64, default: 0 })}
           >
-            <View style={styles.headerContent}>
-              <View style={styles.headerIcon}>
-                <Text style={styles.headerEmoji}>🤖</Text>
+            {/* Header */}
+            <LinearGradient
+              colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
+              style={styles.header}
+            >
+              <View style={styles.headerContent}>
+                <View style={styles.headerIcon}>
+                  <Text style={styles.headerEmoji}>🤖</Text>
+                </View>
+                <View style={styles.headerTextContainer}>
+                  <Text style={styles.headerTitle}>PayPal AI Assistant</Text>
+                  <Text style={styles.headerSubtitle}>Online • Ready to help</Text>
+                </View>
               </View>
-              <View style={styles.headerTextContainer}>
-                <Text style={styles.headerTitle}>PayPal AI Assistant</Text>
-                <Text style={styles.headerSubtitle}>Online • Ready to help</Text>
-              </View>
-            </View>
-          </LinearGradient>
+            </LinearGradient>
 
-          <FlatList
-            ref={listRef}
-            data={messages}
-            keyExtractor={(m) => m.id}
-            renderItem={renderItem}
-            contentContainerStyle={styles.listContent}
-            onContentSizeChange={scrollToEnd}
-            onLayout={scrollToEnd}
-            showsVerticalScrollIndicator={false}
+            <FlatList
+              ref={listRef}
+              data={messages}
+              keyExtractor={(m) => m.id}
+              renderItem={renderItem}
+              contentContainerStyle={styles.listContent}
+              onContentSizeChange={scrollToEnd}
+              onLayout={scrollToEnd}
+              showsVerticalScrollIndicator={false}
+            />
+
+            <LinearGradient
+              colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)']}
+              style={styles.inputBar}
+            >
+              <View style={styles.inputContainer}>
+                <TextInput
+                  value={input}
+                  onChangeText={handleChangeText}
+                  placeholder="Ask me about payments, transfers, or account help..."
+                  placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                  multiline
+                  style={styles.input}
+                  blurOnSubmit={false}
+                />
+                
+                <Pressable
+                  onPress={onSend}
+                  disabled={!canSend}
+                  style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+                >
+                  {sending ? (
+                    <ActivityIndicator size="small" color="#0A0A2E" />
+                  ) : (
+                    <Ionicons name="send" size={20} color="#0A0A2E" />
+                  )}
+                </Pressable>
+              </View>
+            </LinearGradient>
+          </KeyboardAvoidingView>
+
+          {/* Notifications Sidebar */}
+          <NotificationsSidebar 
+            notifications={notifications}
+            onNotificationPress={handleNotificationPress}
           />
-
-          <LinearGradient
-            colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)']}
-            style={styles.inputBar}
-          >
-            <View style={styles.inputContainer}>
-              <TextInput
-                value={input}
-                onChangeText={handleChangeText}
-                placeholder="Ask me about payments, transfers, or account help..."
-                placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                multiline
-                style={styles.input}
-                blurOnSubmit={false}
-              />
-              
-              <Pressable
-                onPress={onSend}
-                disabled={!canSend}
-                style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-              >
-                {sending ? (
-                  <ActivityIndicator size="small" color="#0A0A2E" />
-                ) : (
-                  <Ionicons name="send" size={20} color="#0A0A2E" />
-                )}
-              </Pressable>
-            </View>
-          </LinearGradient>
-        </KeyboardAvoidingView>
+        </View>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -574,8 +786,12 @@ const styles = StyleSheet.create({
     bottom: '30%',
     left: '10%',
   },
-  container: { 
+  mainContainer: {
     flex: 1,
+    flexDirection: 'row',
+  },
+  chatContainer: { 
+    flex: 3,
   },
   header: {
     paddingVertical: 16,
@@ -750,5 +966,113 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 12,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  
+  // Notifications Sidebar Styles
+  notificationsSidebar: {
+    flex: 1,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 16,
+  },
+  notificationsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  notificationsHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notificationsTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+  },
+  unreadBadge: {
+    backgroundColor: '#FF6B9D',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  unreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  notificationsList: {
+    flex: 1,
+    paddingTop: 8,
+  },
+  notificationsContent: {
+    paddingHorizontal: 12,
+    paddingBottom: 20,
+  },
+  notificationItem: {
+    marginBottom: 8,
+  },
+  notificationContent: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  unreadNotification: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(0, 212, 255, 0.3)',
+  },
+  notificationHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  notificationIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  notificationTextContainer: {
+    flex: 1,
+  },
+  notificationTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  notificationTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#00D4FF',
+    marginLeft: 4,
+  },
+  notificationTimestamp: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 11,
+    fontWeight: '400',
+  },
+  notificationMessage: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 13,
+    lineHeight: 18,
   },
 });
