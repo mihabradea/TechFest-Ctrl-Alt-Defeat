@@ -25,24 +25,26 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from "expo-router"; 
 import { URIS } from '@/constants/constants';
 import { getToken } from "@/constants/token_prop";
+import { Linking } from "react-native";
 
 type Role = "user" | "assistant" | "system";
 type Message = { id: string; role: Role; text: string; pending?: boolean };
 type NotificationType = "payment" | "security" | "update" | "reminder" | "unpaid-invoice" | "recurring-payment";
 
 // Updated notification type to include more fields for backend data
-type Notification = { 
-  id: string; 
-  type: NotificationType; 
-  title: string; 
-  message: string; 
+type Notification = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
   timestamp: string;
   isRead: boolean;
-  amount?: number; // for payment notifications
-  currency?: string; // for payment notifications
-  dueDate?: string; // for invoice notifications
-  customerName?: string; // for invoice notifications
-  recurringDate?: string; // for recurring payments
+  amount?: number;
+  currency?: string;
+  dueDate?: string;
+  customerName?: string;
+  recurringDate?: string;
+  link?: string;          // <--- add this
 };
 
 // Types for backend responses
@@ -64,7 +66,37 @@ type RecurringPayment = {
   frequency: string;
 };
 
+type PaypalInvoiceAPI = {
+  count: number;
+  items: Array<{
+    id: string;
+    number: string;
+    status: string; // e.g. "SENT"
+    description?: string | null;
+    amount_value?: number | null;
+    amount_currency?: string | null;
+    recipient: { name?: string | null; email: string };
+    pay_url: string;
+  }>;
+};
+
 const MOCK_MODE = false;
+
+const convertPaypalInvoicesToNotifications = (api: PaypalInvoiceAPI): Notification[] => {
+  const items = Array.isArray(api?.items) ? api.items : [];
+  return items.map((inv) => ({
+    id: `unpaid-${inv.id}`,
+    type: "unpaid-invoice",
+    title: `Invoice #${inv.number} • ${inv.status}`,
+    message: `Invoice to ${inv.recipient.name || inv.recipient.email}`,
+    timestamp: "Today",
+    isRead: false,
+    amount: inv.amount_value ?? undefined,
+    currency: inv.amount_currency ?? undefined,
+    customerName: inv.recipient.name || inv.recipient.email,
+    link: inv.pay_url,
+  }));
+};
 
 //for tts
 // track last blob: url so we can revoke it on web
@@ -484,59 +516,55 @@ export default function ChatScreen() {
 
   // Fetch notifications from backend
   const fetchNotifications = useCallback(async () => {
-    if (MOCK_MODE) {
-      return;
+  if (MOCK_MODE) return;
+
+  setNotificationsLoading(true);
+  try {
+    const token = URIS.TOKEN;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    const [unpaidRes, recurringRes] = await Promise.all([
+      fetch(`${URIS.BACKEND_URI}/unpaid-invoices`, { headers }),
+      fetch(`${URIS.BACKEND_URI}/recurring/same_day`, { headers }),
+    ]);
+
+    let all: Notification[] = [];
+
+    // unpaid invoices
+    if (unpaidRes.ok) {
+      const body: PaypalInvoiceAPI = await unpaidRes.json().catch(() => ({ count: 0, items: [] } as PaypalInvoiceAPI));
+      all = all.concat(convertPaypalInvoicesToNotifications(body));
+    } else {
+      console.warn("Unpaid invoices failed:", unpaidRes.status, await unpaidRes.text().catch(() => ""));
     }
 
-    setNotificationsLoading(true);
-    try {
-      const token = URIS.TOKEN;
-      const headers = {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      // Fetch unpaid invoices and recurring payments in parallel
-      const [unpaidInvoicesResponse, recurringPaymentsResponse] = await Promise.all([
-        fetch(`${URIS.BACKEND_URI}/unpaid-invoices`, { headers }),
-        fetch(`${URIS.BACKEND_URI}/recurring/same_day`, { headers })
-      ]);
-
-      let allNotifications: Notification[] = [];
-
-      // Process unpaid invoices
-      if (unpaidInvoicesResponse.ok) {
-        const unpaidInvoices: UnpaidInvoice[] = await unpaidInvoicesResponse.json();
-        const invoiceNotifications = convertUnpaidInvoicesToNotifications(unpaidInvoices);
-        allNotifications = [...allNotifications, ...invoiceNotifications];
-      } else {
-        console.warn('Failed to fetch unpaid invoices:', unpaidInvoicesResponse.status);
-      }
-
-      // Process recurring payments
-      if (recurringPaymentsResponse.ok) {
-        const recurringPayments: RecurringPayment[] = await recurringPaymentsResponse.json();
-        const recurringNotifications = convertRecurringPaymentsToNotifications(recurringPayments);
-        allNotifications = [...allNotifications, ...recurringNotifications];
-      } else {
-        console.warn('Failed to fetch recurring payments:', recurringPaymentsResponse.status);
-      }
-
-      // Sort by priority: unpaid invoices first, then by timestamp
-      allNotifications.sort((a, b) => {
-        if (a.type === "unpaid-invoice" && b.type !== "unpaid-invoice") return -1;
-        if (a.type !== "unpaid-invoice" && b.type === "unpaid-invoice") return 1;
-        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-      });
-
-      setNotifications(allNotifications);
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-      // Optionally show an error message to the user
-    } finally {
-      setNotificationsLoading(false);
+    // recurring payments (assuming it returns an array; if it returns {items}, adapt similarly)
+    if (recurringRes.ok) {
+      const raw = await recurringRes.json().catch(() => []);
+      const arr = Array.isArray(raw?.items) ? raw.items : Array.isArray(raw) ? raw : [];
+      all = all.concat(convertRecurringPaymentsToNotifications(arr));
+    } else {
+      console.warn("Recurring payments failed:", recurringRes.status, await recurringRes.text().catch(() => ""));
     }
-  }, []);
+
+    // priority: unpaid-invoice first; then leave as-is or add custom date logic if you have real dates
+    all.sort((a, b) => {
+      if (a.type === "unpaid-invoice" && b.type !== "unpaid-invoice") return -1;
+      if (a.type !== "unpaid-invoice" && b.type === "unpaid-invoice") return 1;
+      return 0; // no reliable ISO date here; keep fetch order
+    });
+
+    setNotifications(all);
+  } catch (err) {
+    console.error("Error fetching notifications:", err);
+  } finally {
+    setNotificationsLoading(false);
+  }
+}, []);
+
 
   // Fetch notifications on component mount and set up periodic refresh
   useEffect(() => {
@@ -624,43 +652,44 @@ export default function ChatScreen() {
   };
 
   const handleNotificationPress = (notification: Notification) => {
-    // Mark notification as read
-    setNotifications(prev => 
-      prev.map(n => 
-        n.id === notification.id ? { ...n, isRead: true } : n
-      )
-    );
-    
-    // Handle different notification types
-    if (notification.type === "unpaid-invoice") {
-      Alert.alert(
-        "Unpaid Invoice",
-        `Invoice from ${notification.customerName}\nAmount: ${formatCurrency(notification.amount!, notification.currency!)}\nDue Date: ${notification.dueDate}\n\nWould you like to send a payment reminder?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Send Reminder", onPress: () => {
-            // Here you could implement sending a reminder
-            console.log('Send reminder for invoice:', notification.id);
-          }}
-        ]
-      );
-    } else if (notification.type === "recurring-payment") {
-      Alert.alert(
-        "Recurring Payment Due",
-        `Payment to ${notification.customerName}\nAmount: ${formatCurrency(notification.amount!, notification.currency!)}\nDue: ${notification.recurringDate}\n\nWould you like to process this payment?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Process Payment", onPress: () => {
-            // Here you could implement payment processing
-            console.log('Process recurring payment:', notification.id);
-          }}
-        ]
-      );
-    }
-    
-    console.log('Notification pressed:', notification);
-  };
+  setNotifications((prev) => prev.map((n) => (n.id === notification.id ? { ...n, isRead: true } : n)));
 
+  if (notification.type === "unpaid-invoice") {
+    const amountLine =
+      notification.amount && notification.currency
+        ? `Amount: ${formatCurrency(notification.amount, notification.currency)}\n`
+        : "";
+
+    Alert.alert(
+      "Unpaid Invoice",
+      `Recipient: ${notification.customerName}\n${amountLine}${notification.link ? "Open the invoice to view or pay." : ""}`,
+      [
+        { text: "Close", style: "cancel" },
+        ...(notification.link
+          ? [
+              {
+                text: "Open Invoice",
+                onPress: () => Linking.openURL(notification.link!),
+              },
+            ]
+          : []),
+      ]
+    );
+  } else if (notification.type === "recurring-payment") {
+    Alert.alert(
+      "Recurring Payment Due",
+      `Payment to ${notification.customerName}\n${
+        notification.amount && notification.currency
+          ? `Amount: ${formatCurrency(notification.amount, notification.currency)}\n`
+          : ""
+      }Due: ${notification.recurringDate || "Today"}`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Process Payment", onPress: () => console.log("Process recurring payment:", notification.id) },
+      ]
+    );
+  }
+};
   useEffect(() => {
     scrollToEnd();
   }, [messages.length, scrollToEnd]);
