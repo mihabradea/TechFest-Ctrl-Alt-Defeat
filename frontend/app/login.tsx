@@ -14,6 +14,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from "expo-router";
 import PayPalLoginButton from "@/components/LoginButton";
 import { LinearGradient } from 'expo-linear-gradient';
+import { setToken } from "@/constants/token_prop";
+import { URIS } from "@/constants/constants";
 
 const { width, height } = Dimensions.get('window');
 
@@ -178,7 +180,35 @@ export default function LoginScreen() {
                 <PayPalLoginButton
                     onSuccess={async ({ code, state }) => {
                       setAttemptedLogin(false);
-                      await AsyncStorage.setItem('token', `DEV_TOKEN_${Date.now()}`);
+                      // TODO
+                      // call /login
+                       try {
+                        const res = await fetch(`${URIS.BACKEND_URI}/login`, {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
+                            email: "mail@gmail.com", // mocked email, or use the `email` argument
+                          }),
+                        });
+
+                        if (!res.ok) {
+                          throw new Error(`Request failed with status ${res.status}`);
+                        }
+
+                        // Parse JSON response
+                        const data: { token?: string; [key: string]: any } = await res.json();
+
+                        if (data.token) {
+                          setToken(data.token);
+                          console.log("Token saved:", data.token);
+                        } else {
+                          console.warn("No token found in response:", data);
+                        }
+                      } catch (error) {
+                        console.error("Login failed:", error);
+                      }
                       router.replace('/');
                     }}
                     onCancel={() => attemptedLogin && setMsg("Login cancelled")}

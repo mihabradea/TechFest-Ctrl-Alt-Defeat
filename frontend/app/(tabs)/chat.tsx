@@ -24,6 +24,8 @@ import { Buffer } from "buffer";
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from "expo-router"; 
 import { URIS } from '@/constants/constants';
+import { getToken } from "@/constants/token_prop";
+import { get } from "http";
 
 type Role = "user" | "assistant" | "system";
 type Message = { id: string; role: Role; text: string; pending?: boolean };
@@ -499,7 +501,7 @@ export default function ChatScreen() {
     });
 
   const sendToBackend = async (userText: string) => {
-    const token = URIS.TOKEN;
+    const token = getToken();
     console.log("[CHAT] Sending to backend…", { len: userText.length, messages: messages.length, token: token });
     const res = await fetch(`${URIS.BACKEND_URI}/chat`, {
       method: "POST",
@@ -617,7 +619,8 @@ export default function ChatScreen() {
   }, [input, sendMessage]);
 
   const uploadForTranscription = useCallback(async (uri: string) => {
-  const token = URIS.TOKEN
+  const token = getToken();
+
   if (Platform.OS === "web") {
     // On web: use fetch + FormData with a Blob
     // NOTE: If your recording comes from a web-only recorder, you'll already have a Blob.
