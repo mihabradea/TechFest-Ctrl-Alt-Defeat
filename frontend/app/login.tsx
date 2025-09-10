@@ -176,9 +176,6 @@ export default function LoginScreen() {
               
               <View style={styles.buttonContainer}>
                 <PayPalLoginButton
-                    // Add a prop your button can call when it actually starts the flow,
-                    // or wrap its onPress if it exposes one.
-                    onStart={() => setAttemptedLogin(true)}
                     onSuccess={async ({ code, state }) => {
                       setAttemptedLogin(false);
                       await AsyncStorage.setItem('token', `DEV_TOKEN_${Date.now()}`);

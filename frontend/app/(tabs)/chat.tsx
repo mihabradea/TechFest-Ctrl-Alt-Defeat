@@ -20,6 +20,7 @@ import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import { Buffer } from "buffer";
 import { LinearGradient } from 'expo-linear-gradient';
+import { URIS } from '@/constants/constants';
 
 type Role = "user" | "assistant" | "system";
 type Message = { id: string; role: Role; text: string; pending?: boolean };
@@ -274,23 +275,35 @@ export default function ChatScreen() {
     });
 
   const sendToBackend = async (userText: string) => {
-    const token = await AsyncStorage.getItem("token");
-    const res = await fetch("http://127.0.0.1:8000/chat", {
+    const token = URIS.TOKEN;
+    console.log("[CHAT] Sending to backend…", { len: userText.length, messages: messages.length, token: token });
+    const res = await fetch(`${URIS.BACKEND_URI}/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({
-        messages: [
-          ...messages.map(({ role, text }) => ({ role, content: text })),
-          { role: "user", content: userText },
-        ],
-      }),
+      body: JSON.stringify([
+        ...messages.map(({ role, text }) => ({ role, content: text })),
+        { role: "user", content: userText },
+      ]),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return (data.reply as string) ?? "…";
+
+  let data: any;
+  try {
+    // Try to parse JSON even if status is not ok
+    data = await res.json();
+  } catch (err) {
+    console.error("Failed to parse error response:", err);
+    throw new Error(`HTTP ${res.status} (no JSON body)`);
+  }
+
+  if (!res.ok) {
+    console.error("Backend error payload:", data);
+    throw new Error(`HTTP ${res.status}: ${JSON.stringify(data)}`);
+  }
+
+  return (data.reply as string) ?? "…";
   };
 
   const sendMessage = useCallback(async (text: string) => {
@@ -380,10 +393,10 @@ export default function ChatScreen() {
     const cached = ttsCache.current[id];
     if (cached) return cached;
 
-    const token = await AsyncStorage.getItem("token");
+    const token = URIS.TOKEN;
     console.log("[TTS] Fetching MP3 from backend…", { len: text.length });
 
-    const res = await fetch("http://127.0.0.1:8000/tts", {
+    const res = await fetch(`${URIS.BACKEND_URI}/tts`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
