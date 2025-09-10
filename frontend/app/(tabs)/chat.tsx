@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -21,6 +22,7 @@ import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import { Buffer } from "buffer";
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from "expo-router"; 
 
 type Role = "user" | "assistant" | "system";
 type Message = { id: string; role: Role; text: string; pending?: boolean };
@@ -361,6 +363,8 @@ const MessageItem = ({
 export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false); 
   const [messages, setMessages] = useState<Message[]>(() => [
     {
       id: "welcome",
@@ -651,6 +655,41 @@ export default function ChatScreen() {
     />
   );
 
+  const logout = useCallback(() => {
+  Alert.alert(
+    "Log out",
+    "Are you sure you want to log out?",
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log out",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setLoggingOut(true);
+            await stopSpeaking();
+            await AsyncStorage.removeItem("token");
+            setMessages([
+              {
+                id: "welcome",
+                role: "assistant",
+                text:
+                  "Hi! I'm your PayPal AI assistant. I can help you with payments, transactions, and account management. How can I assist you today? ✨",
+              },
+            ]);
+
+            // ⬇️ Go to /login (cannot go back to tabs)
+            router.replace("/login");
+          } finally {
+            setLoggingOut(false);
+          }
+        },
+      },
+    ],
+    { cancelable: true }
+  );
+}, [router, stopSpeaking, setMessages]);
+
   return (
     <LinearGradient
       colors={['#0A0A2E', '#16213E', '#0E4B99']}
@@ -689,15 +728,42 @@ export default function ChatScreen() {
               colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.05)']}
               style={styles.header}
             >
-              <View style={styles.headerContent}>
-                <View style={styles.headerIcon}>
-                  <Text style={styles.headerEmoji}>🤖</Text>
-                </View>
-                <View style={styles.headerTextContainer}>
-                  <Text style={styles.headerTitle}>PayPal AI Assistant</Text>
-                  <Text style={styles.headerSubtitle}>Online • Ready to help</Text>
-                </View>
+            
+              <View style={styles.headerRow}>   {/* NEW */}
+                <View style={styles.headerContent}>
+                  <View style={styles.headerIcon}>
+                    <Text style={styles.headerEmoji}>🤖</Text>
+                  </View>
+                  <View style={styles.headerTextContainer}>
+                    <Text style={styles.headerTitle}>PayPal AI Assistant</Text>
+                    <Text style={styles.headerSubtitle}>Online • Ready to help</Text>
+                  </View>
               </View>
+
+                <Pressable
+                  onPress={logout}
+                  disabled={loggingOut}
+                  hitSlop={10}
+                  style={({ pressed }) => [
+                    styles.logoutBtn,
+                    loggingOut && { opacity: 0.6 },
+                    pressed && { transform: [{ scale: 0.98 }] },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Log out"
+                >
+                  {loggingOut ? (
+                    <ActivityIndicator size="small" color="#0A0A2E" />
+                  ) : (
+                    <View style={styles.logoutInner}>
+                      <Ionicons name="log-out-outline" size={16} color="#0A0A2E" />
+                      <Text style={styles.logoutText}>Log out</Text>
+                    </View>
+                  )}
+                </Pressable>
+              </View>
+            
+
             </LinearGradient>
 
             <FlatList
@@ -750,6 +816,7 @@ export default function ChatScreen() {
       </SafeAreaView>
     </LinearGradient>
   );
+  
 }
 
 const styles = StyleSheet.create({
@@ -799,9 +866,38 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
+  headerRow: {                             // NEW
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  logoutBtn: {                             // NEW
+    paddingHorizontal: 12,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#00D4FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#00D4FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  logoutInner: {                           // NEW
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  logoutText: {                            // NEW
+    color: '#0A0A2E',
+    fontWeight: '700',
+    fontSize: 13,
+    letterSpacing: -0.2,
   },
   headerIcon: {
     width: 44,
