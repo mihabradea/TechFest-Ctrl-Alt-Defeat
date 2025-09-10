@@ -264,6 +264,26 @@ const NotificationItem = ({
         <Text style={styles.notificationMessage} numberOfLines={2}>
           {getEnhancedMessage(notification)}
         </Text>
+
+        {notification.type === "unpaid-invoice" && !!notification.link && (
+          <Pressable
+            onPress={(e) => {
+              // prevent triggering the card’s onPress
+              e?.stopPropagation?.();
+              Linking.openURL(notification.link!);
+            }}
+            style={styles.linkRow}
+            accessibilityRole="link"
+            accessibilityLabel="Open invoice"
+            hitSlop={8}
+          >
+            <Ionicons name="open-outline" size={16} color="#00D4FF" />
+            <Text style={styles.linkText} numberOfLines={1}>
+              {displayUrl(notification.link!)}
+            </Text>
+          </Pressable>
+        )}
+
       </Pressable>
     </Animated.View>
   );
@@ -514,6 +534,8 @@ const addMockRecurringNotifications = (): Notification[] => {
   ];
 };
 
+const displayUrl = (url: string) =>
+  url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
 
 export default function ChatScreen() {
@@ -1296,6 +1318,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderRadius: 100,
     opacity: 0.03,
+  },
+  linkRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  linkText: {
+    color: "#00D4FF",
+    fontSize: 13,
+    textDecorationLine: "underline",
+    flexShrink: 1,
   },
   circle1: {
     width: 80,
