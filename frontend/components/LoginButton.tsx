@@ -8,13 +8,13 @@ import * as Random from 'expo-random'; // If not using Expo, polyfill with anoth
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Linking, Platform, Pressable } from 'react-native';
 import InAppBrowser from 'react-native-inappbrowser-reborn';
-
+import { URIS } from '@/constants/constants';
 // =====================
 // 1) CONFIGURATION
 // =====================
 // Fill these from your environment / secrets service (NOT hardcoded in prod):
-const PAYPAL_CLIENT_ID = 'AUwDbh92cYpOxREvA3aeugMEfJdMH5U-HwMvLi0z-ABQQ0puDUd1ijGzFsh6s7ugl2zisrqI4tZGYRAT';
-const REDIRECT_URI = 'https://yellow-tree-0f21d0a10.2.azurestaticapps.net/chat'; // must also be set in PayPal Dev Dashboard
+const PAYPAL_CLIENT_ID = URIS.PAYPAL_CLIENT_ID;
+const REDIRECT_URI = URIS.REDIRECT_URI;
 const USE_SANDBOX = true; // set false for live
 
 // Scopes: include at least "openid". Add others as needed.
