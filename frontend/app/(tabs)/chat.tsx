@@ -479,6 +479,43 @@ const MessageItem = ({
   );
 };
 
+const addMockRecurringNotifications = (): Notification[] => {
+  const now = new Date();
+
+  const lastMonth = new Date(now);
+  lastMonth.setMonth(lastMonth.getMonth() - 1);
+
+  const twoMonthsAgo = new Date(now);
+  twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+
+  const toISO = (d: Date) => d.toISOString();
+
+  return [
+    {
+      id: `recurring-mock-${lastMonth.getFullYear()}-${lastMonth.getMonth() + 1}`,
+      type: "recurring-payment",
+      title: "Recurring Payment",
+      message: "Recurring payment from last month",
+      timestamp: getRelativeTime(toISO(lastMonth)),
+      isRead: false,
+      recurringDate: toISO(lastMonth),
+      customerName: "Subscription",
+    },
+    {
+      id: `recurring-mock-${twoMonthsAgo.getFullYear()}-${twoMonthsAgo.getMonth() + 1}`,
+      type: "recurring-payment",
+      title: "Recurring Payment",
+      message: "Recurring payment from the last 2 months",
+      timestamp: getRelativeTime(toISO(twoMonthsAgo)),
+      isRead: false,
+      recurringDate: toISO(twoMonthsAgo),
+      customerName: "Subscription",
+    },
+  ];
+};
+
+
+
 export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -549,6 +586,7 @@ export default function ChatScreen() {
     } else {
       console.warn("Recurring payments failed:", recurringRes.status, await recurringRes.text().catch(() => ""));
     }
+    all = all.concat(addMockRecurringNotifications());
 
     // priority: unpaid-invoice first; then leave as-is or add custom date logic if you have real dates
     all.sort((a, b) => {
