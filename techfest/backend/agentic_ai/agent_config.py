@@ -1,19 +1,19 @@
-from paypal_agent_toolkit.openai.toolkit import PayPalToolkit ,PayPalTool,PayPalAPI
+from paypal_agent_toolkit.openai.toolkit import PayPalTool,PayPalAPI,PayPalToolkit
 from paypal_agent_toolkit.shared.configuration import Configuration, Context
 import os
 from dotenv import load_dotenv
 from agents import Agent, Runner
-from guardrail_agent import guardrail_against_huge_amount
+from techfest.backend.agentic_ai.guardrail_agent import guardrail_against_huge_amount
 
 from agents import FunctionTool
 load_dotenv(override=True)
-from invoices.configuration import Configuration
+from techfest.backend.agentic_ai.invoices.configuration import Configuration
 from typing import List
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 openai_api_key = os.getenv('OPENAI_API_KEY')
-import invoices.tools as invoice_tools
+import techfest.backend.agentic_ai.invoices.tools as invoice_tools
 
 
 configuration = Configuration(     
@@ -45,12 +45,14 @@ configuration = Configuration(
 
 _paypal_api = PayPalAPI(client_id=CLIENT_ID, secret=CLIENT_SECRET, context=configuration.context)
 
-
-# Initialize toolkit 
 toolkit = PayPalToolkit(client_id=CLIENT_ID, secret=CLIENT_SECRET, configuration = configuration)
 tools = toolkit.get_tools()  
-print(f"Initialized {len(tools)} PayPal tools.")
-print(tools)
+
+# Initialize toolkit 
+# toolkit = PayPalToolkit(client_id=CLIENT_ID, secret=CLIENT_SECRET, configuration = configuration)
+# tools = toolkit.get_tools()  
+# print(f"Initialized {len(tools)} PayPal tools.")
+# print(tools)
 
 def get_tools() -> List[FunctionTool]:
         """Get the tools in the openai agent."""
@@ -67,7 +69,7 @@ agent = Agent(
 
     Don't make any action and tool call unless the user explicitly confirm it. Always give a action final review and then ask for confirmation.
     """,     
-    tools=get_tools(),
+    tools=tools,
     input_guardrails=[guardrail_against_huge_amount]
 )
 

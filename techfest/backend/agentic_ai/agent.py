@@ -2,7 +2,7 @@ from paypal_agent_toolkit.openai.toolkit import PayPalToolkit
 from paypal_agent_toolkit.shared.configuration import Configuration, Context
 import os
 from dotenv import load_dotenv
-from agents import Agent  
+from agents import Agent  ,Runner
 
 load_dotenv(override=True)
 
@@ -37,3 +37,8 @@ agent = Agent(
     """,     
     tools=tools 
 )
+
+runner = Runner()
+
+def pi():
+    return agent

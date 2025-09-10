@@ -2,7 +2,7 @@ import dotenv
 dotenv.load_dotenv()
 
 from typing import List, Dict
-
+import asyncio
 from fastapi import FastAPI, Request, Response, HTTPException, Body, Query
 import secrets
 import httpx
@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import tempfile, os
 from pydantic import BaseModel, EmailStr
 from fastapi.responses import FileResponse
+from agents import InputGuardrailTripwireTriggered
 
 from techfest.backend.core.paypal_api import PayPalAPI
 from techfest.backend.core.paypal_service import PayPalService
@@ -31,9 +32,70 @@ from techfest.backend.paypal_transactions.auth import fetch_paypal_token, fetch_
 from techfest.backend.paypal_transactions.notify import notify_same_day_last_month
 from techfest.backend.paypal_transactions.notify import show_recurring_same_day_last_3_months
 
-import time
+from techfest.backend.agentic_ai.agent_config import agent,runner
 
 
+class Interface:
+    def __init__(self):
+        self.runner = runner
+        self.agent = agent
+
+    @staticmethod
+    def build_transcript(history: List[Dict], latest_user: str) -> str:
+        """
+        Convert messages history into the compact transcript your agent expects.
+        Messages look like: [{"role": "user"|"assistant", "content": "..."}]
+        """
+        lines = ["[Conversation so far]"]
+        for m in history:
+            role = "User" if m.get("role") == "user" else "Assistant"
+            content = (m.get("content") or "").strip()
+            if content:
+                lines.append(f"{role}: {content}")
+        lines.append(f"User: {latest_user}")
+        lines.append("Assistant:")
+        return "\n".join(lines)
+
+    def build_transcript_from_messages(self, messages: List[Dict]) -> str:
+        """
+        Split the incoming list into history + latest user message (like Gradio did).
+        If the last message isn't from the user, fallback to empty latest.
+        """
+        if not messages:
+            # Start a fresh conversation
+            return "[Conversation so far]\nAssistant:"
+
+        latest = messages[-1]
+        latest_user = latest.get("content", "") if latest.get("role") == "user" else ""
+        history = messages[:-1] if latest_user else messages
+        if not latest_user:
+            # No trailing user message; just render the history and cue the assistant
+            lines = ["[Conversation so far]"]
+            for m in history:
+                role = "User" if m.get("role") == "user" else "Assistant"
+                content = (m.get("content") or "").strip()
+                if content:
+                    lines.append(f"{role}: {content}")
+            lines.append("Assistant:")
+            return "\n".join(lines)
+
+        return self.build_transcript(history, latest_user)
+
+    def run_agent_sync(self, prompt: str) -> str:
+        """
+        Run the (async) agent synchronously so the endpoint can be a plain def.
+        """
+        async def _run():
+            result = await self.runner.run(self.agent, prompt)
+            return getattr(result, "final_output", None) or str(result)
+
+        # Endpoint is sync, so there's no running loop in this thread; asyncio.run is safe.
+        return asyncio.run(_run())
+
+
+ui = Interface()
+
+#run command for testing: uvicorn techfest.backend.main:app --reload
 
 from techfest.backend.auth.jwt_auth import (
     require_active_token,
@@ -41,8 +103,6 @@ from techfest.backend.auth.jwt_auth import (
     revoke_current_token,
     get_or_create_user_by_email,
 )
-
-#run command for testing: uvicorn techfest.backend.main:app --reload
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -357,9 +417,23 @@ def notify_recurring_same_day(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to compute recurring payments: {e}")
 
-@app.post('/chat')
+@app.post("/chat")
 def chat(messages: List[Dict] = Body(...)):
-
-    print(f"Received messages: {messages}")
-    res = paypal_service.call_model(messages)
-    return {"reply": res}
+    """
+    Example payload:
+    [
+      {"role": "user", "content": "Hi"},
+      {"role": "assistant", "content": "Hello!"},
+      {"role": "user", "content": "What's the weather?"}
+    ]
+    """
+    try:
+        prompt = ui.build_transcript_from_messages(messages or [])
+        reply = ui.run_agent_sync(prompt)
+        return {"reply": reply}
+    except InputGuardrailTripwireTriggered:
+        info = "You can't perform a request with such amount of money. Please try with a smaller amount, under 1000."
+        return {"reply": f"⚠️ Guardrail triggered: {info}"}
+    except Exception as e:
+        # Surface a clean 500 while logging the underlying error
+        raise HTTPException(status_code=500, detail=f"Internal error: {e}")
