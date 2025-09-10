@@ -1,4 +1,9 @@
+from datetime import timedelta
+
 import dotenv
+
+from techfest.backend.db.models import now_utc, PayPalToken
+
 dotenv.load_dotenv()
 
 from typing import List, Dict
@@ -89,7 +94,7 @@ async def get_state():
 
 # --- OAuth callback endpoint: handles PayPal redirect after user login ---
 @app.post("/callback")
-async def paypal_callback(request: Request):
+async def paypal_callback(request: Request, db: Session = Depends(get_db)):
     print("Received callback with query params:", request.query_params)
     params = dict(request.query_params)  # Extract query parameters from PayPal
     error = params.get("error")
@@ -130,17 +135,40 @@ async def paypal_callback(request: Request):
         raise HTTPException(status_code=502, detail=f"Token exchange failed: {detail}")
 
     tokens = token_res.json()
+    # Parse & compute expiry
+    try:
+        expires_in = int(tokens.get("expires_in") or 0)
+    except ValueError:
+        expires_in = 0
+    expires_at = now_utc() + timedelta(seconds=expires_in)
 
-    # Build response in requested format
-    response_data = {
-        "scope": tokens.get("scope"),
+    # Persist to DB
+    ppt = PayPalToken(
+        scope=tokens.get("scope"),
+        access_token=tokens.get("access_token"),
+        token_type=tokens.get("token_type"),
+        expires_in=expires_in,
+        expires_at=expires_at,
+        refresh_token=tokens.get("refresh_token"),  # stored server-side; not returned to client
+        nonce=tokens.get("nonce"),
+        state=state,
+        auth_code=code,
+        # user_id=...  # Optional: set if you know who initiated (via signed state)
+    )
+
+    db.add(ppt)
+    db.commit()
+    db.refresh(ppt)
+
+    # Return ONLY what you want the frontend to have (no refresh token)
+    return {
         "access_token": tokens.get("access_token"),
         "token_type": tokens.get("token_type"),
-        "expires_in": tokens.get("expires_in"),
-        "refresh_token": tokens.get("refresh_token"),
-        "nonce": tokens.get("nonce")
+        "expires_in": expires_in,
+        "scope": tokens.get("scope"),
+        "nonce": tokens.get("nonce"),
+        # deliberately omit refresh_token from response
     }
-    return response_data
 
 # --- Endpoint to exchange refresh token for access token ---
 @app.post("/api/refresh_token")
