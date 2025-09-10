@@ -903,44 +903,7 @@ export default function ChatScreen() {
               onLayout={scrollToEnd}
               showsVerticalScrollIndicator={false}
             />
-
             <LinearGradient
-              colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)']}
-              style={styles.inputBar}
-            >
-              <View style={styles.inputContainer}>
-                <TextInput
-                  value={input}
-                  onChangeText={handleChangeText}
-                  placeholder="Ask me about payments, transfers, or account help..."
-                  placeholderTextColor="rgba(255, 255, 255, 0.5)"
-                  multiline
-                  style={styles.input}
-                  blurOnSubmit={false}
-                />
-                
-                <Pressable
-                  onPress={onSend}
-                  disabled={!canSend}
-                  style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-                >
-                  {sending ? (
-                    <ActivityIndicator size="small" color="#0A0A2E" />
-                  ) : (
-                    <Ionicons name="send" size={20} color="#0A0A2E" />
-                  )}
-                </Pressable>
-              </View>
-            </LinearGradient>
-          </KeyboardAvoidingView>
-
-          {/* Notifications Sidebar */}
-          <NotificationsSidebar 
-            notifications={notifications}
-            onNotificationPress={handleNotificationPress}
-          />
-        </View>
-          <LinearGradient
             colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.04)']}
             style={styles.inputBar}
           >
@@ -976,6 +939,13 @@ export default function ChatScreen() {
             </View>
           </LinearGradient>
         </KeyboardAvoidingView>
+
+          {/* Notifications Sidebar */}
+          <NotificationsSidebar 
+            notifications={notifications}
+            onNotificationPress={handleNotificationPress}
+          />
+        </View>
       </SafeAreaView>
     </LinearGradient>
   );
