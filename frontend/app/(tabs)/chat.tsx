@@ -191,6 +191,9 @@ export default function ChatScreen() {
   const soundRef = useRef<Audio.Sound | null>(null);
   const ttsCache = useRef<Record<string, string>>({});
 
+  const [isRecording, setIsRecording] = useState(false);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+
   // Animation refs for floating elements
   const floatAnim1 = useRef(new Animated.Value(0)).current;
   const floatAnim2 = useRef(new Animated.Value(0)).current;
@@ -256,6 +259,15 @@ export default function ChatScreen() {
     };
   }, []);
 
+  useEffect(() => {
+      return () => {
+        const rec = recordingRef.current;
+        if (rec) {
+          rec.stopAndUnloadAsync().catch(() => {});
+        }
+      };
+    }, []);
+
   const copyToClipboard = async (id: string, text: string) => {
     await Clipboard.setStringAsync(text);
     setCopiedId(id);
@@ -292,6 +304,50 @@ export default function ChatScreen() {
     const data = await res.json();
     return (data.reply as string) ?? "…";
   };
+
+  const askMicPermission = useCallback(async () => {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== "granted") throw new Error("Microphone permission denied");
+    }, []);
+
+    const startRecording = useCallback(async () => {
+      await askMicPermission();
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        //interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+        //interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: false,
+      });
+
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+
+      recordingRef.current = recording;
+      setIsRecording(true);
+   }, [askMicPermission]);
+
+  const stopRecording = useCallback(async () => {
+      const rec = recordingRef.current;
+      if (!rec) return null;
+
+      try {
+        await rec.stopAndUnloadAsync();
+      } catch {}
+
+      const uri = rec.getURI();
+      recordingRef.current = null;
+      setIsRecording(false);
+
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+
+      return uri;
+  }, []);
+
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
@@ -335,11 +391,71 @@ export default function ChatScreen() {
     await sendMessage(text);
   }, [input, sendMessage]);
 
+  const uploadForTranscription = useCallback(async (uri: string) => {
+  const token = await AsyncStorage.getItem("token");
+  if (Platform.OS === "web") {
+    // On web: use fetch + FormData with a Blob
+    // NOTE: If your recording comes from a web-only recorder, you'll already have a Blob.
+    // If `uri` is a blob/data URL, fetch it back into a Blob:
+    const resp = await fetch(uri);
+    const blob = await resp.blob();
+
+    const form = new FormData();
+    // Name the file with an extension your backend accepts (m4a or wav if you converted).
+    form.append("file", blob, `recording-${Date.now()}.m4a`);
+
+    const res = await fetch("http://127.0.0.1:8000/stt", {
+      method: "POST",
+      // Don't set Content-Type manually; the browser adds the correct multipart boundary.
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: form,
+    });
+
+    if (!res.ok) throw new Error(`STT HTTP ${res.status}`);
+    const data = await res.json();
+    return (data.text as string) ?? "";
+  }
+
+  // On native (iOS/Android): keep uploadAsync
+  const result = await FileSystem.uploadAsync(
+    "http://127.0.0.1:8000/stt",
+    uri,
+    {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType: "audio/m4a", // or "audio/wav" if you transcoded
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    }
+  );
+
+  if (result.status !== 200) throw new Error(`STT HTTP ${result.status}: ${result.body}`);
+  const data = JSON.parse(result.body);
+  return (data.text as string) ?? "";
+}, []);
+
+
   const onSendWithText = useCallback(async (text: string) => {
-    if (!text.trim()) return;
-    setInput("");
-    await sendMessage(text);
-  }, [sendMessage]);
+        if (!text.trim()) return;
+        setInput("");
+        await sendMessage(text);
+      }, [sendMessage]);const onMicPress = useCallback(async () => {
+      try {
+        if (isRecording) {
+          const uri = await stopRecording();
+          if (!uri) return;
+          const text = await uploadForTranscription(uri);
+          setInput((prev) => (prev.length ? `${prev} ${text}` : text));
+        } else {
+          await startRecording();
+        }
+      } catch (e) {
+        console.warn("Mic error:", e);
+      }
+    }, [isRecording, startRecording, stopRecording, uploadForTranscription]);
+
+
+
 
   const handleChangeText = (t: string) => {
     if (t.endsWith("\n")) {
@@ -520,6 +636,13 @@ export default function ChatScreen() {
                 style={styles.input}
                 blurOnSubmit={false}
               />
+
+              <Pressable
+                onPress={onMicPress}
+                style={[styles.micBtn, isRecording && styles.micBtnActive]}
+              >
+                <Ionicons name={isRecording ? "stop" : "mic"} size={20} color="#0A0A2E" />
+              </Pressable>
               
               <Pressable
                 onPress={onSend}
@@ -739,6 +862,23 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { 
     opacity: 0.5,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  micBtn: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: '#FFFFFF',
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: '#FFFFFF',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 4,
+  },
+  micBtnActive: {
+      backgroundColor: '#FF6B9D',
+      shadowColor: '#FF6B9D',
   },
   actions: {
     flexDirection: "row",
