@@ -27,8 +27,8 @@ export default function Index() {
   // }
 
   // return token ? <Redirect href="/" /> : <Redirect href="/login" />;
-  // return <Redirect href="/login" />
+  return <Redirect href="/login" />
 
 
-  return <Redirect href="/chat" />
+  // return <Redirect href="/chat" />
 }
