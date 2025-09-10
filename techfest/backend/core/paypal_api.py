@@ -4,6 +4,8 @@ import time
 import dotenv
 import os
 
+from techfest.backend.paypal_transactions.auth import fetch_paypal_token
+
 
 class Invoice:
     def __init__(self, invoice_number, status, amount, currency, due_date):
@@ -30,6 +32,8 @@ class PayPalAPI:
         """
         Authenticate with PayPal API and store access token and expiration
         """
+
+        """
         response = requests.post(
             url=f"{self.base_url}/v1/oauth2/token",
             auth=(self.client_id, self.client_secret),
@@ -46,6 +50,11 @@ class PayPalAPI:
         self.access_token = data.get("access_token")
         expires_in = data.get("expires_in", 0)
         self.access_token_expires_in = time.time() + expires_in - 60  # refresh 1 min before expiry
+        """
+
+        self.access_token = fetch_paypal_token()
+        print(self.access_token)
+        self.access_token_expires_in = time.time() + 32000 - 60
 
     def get_token(self):
         if not self.access_token or not self.access_token_expires_in or time.time() >= self.access_token_expires_in:
