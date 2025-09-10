@@ -39,6 +39,11 @@ type Notification = {
 
 const MOCK_MODE = false;
 
+//for tts
+// track last blob: url so we can revoke it on web
+const currentObjectUrlRef = useRef<string | null>(null);
+const webBlobUrls = useRef<Set<string>>(new Set()); // track for cleanup on unmount
+
 // Hardcoded notifications data
 const MOCK_NOTIFICATIONS: Notification[] = [
   {
@@ -612,7 +617,7 @@ export default function ChatScreen() {
   }, [input, sendMessage]);
 
   const uploadForTranscription = useCallback(async (uri: string) => {
-  const token = await AsyncStorage.getItem("token");
+  const token = URIS.TOKEN
   if (Platform.OS === "web") {
     // On web: use fetch + FormData with a Blob
     // NOTE: If your recording comes from a web-only recorder, you'll already have a Blob.
@@ -686,54 +691,101 @@ export default function ChatScreen() {
     }
   };
 
+const isStartingRef = useRef(false);
+const speakingIdRef = useRef<string | null>(null);
+const stopInProgressRef = useRef(false);
+const lastStopAtRef = useRef(0);
+
+
+// simple click guard to avoid double-fires on web
+const lastPressTsRef = useRef(0);
+const lastPressIdRef = useRef<string | null>(null);
+
+// keep ref in sync with state
+useEffect(() => {
+  speakingIdRef.current = speakingId;
+}, [speakingId]);
+
   const stopSpeaking = useCallback(async () => {
-    try {
-      if (soundRef.current) {
-        console.log("[TTS] Stopping playback");
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
+  if (stopInProgressRef.current) return;
+  stopInProgressRef.current = true;
+
+  const s = soundRef.current;
+  soundRef.current = null;
+
+  try {
+    if (s) {
+      s.setOnPlaybackStatusUpdate(null);
+      if (Platform.OS === "web") {
+        try { await s.pauseAsync(); } catch {}
+        try { await s.setPositionAsync(0); } catch {}
+      } else {
+        try { await s.stopAsync(); } catch {}
       }
-    } finally {
-      setSpeakingId(null);
+      try { await s.unloadAsync(); } catch {}
     }
-  }, []);
+  } finally {
+    // clear both state and ref so toggle works reliably
+    speakingIdRef.current = null;
+    setSpeakingId(null);
+    lastStopAtRef.current = Date.now();
+    stopInProgressRef.current = false;
+  }
+}, []);
 
-  const playLocalFile = useCallback(async (fileUri: string) => {
-    await stopSpeaking();
-    const { sound } = await Audio.Sound.createAsync({ uri: fileUri }, { shouldPlay: true });
-    soundRef.current = sound;
-    sound.setOnPlaybackStatusUpdate((status) => {
-      if (!status.isLoaded) return;
-      if ((status as any).didJustFinish) {
-        console.log("[TTS] Finished");
-        stopSpeaking();
-      }
-    });
-  }, [stopSpeaking]);
 
-  const fetchTtsFile = useCallback(async (id: string, text: string) => {
-    const cached = ttsCache.current[id];
-    if (cached) return cached;
+// -------------------- PLAY --------------------
+const playLocalFile = useCallback(async (fileUri: string) => {
+  // ❌ no stopSpeaking here — it resets speakingId during start
 
-    const token = URIS.TOKEN;
-    console.log("[TTS] Fetching MP3 from backend…", { len: text.length });
+  const { sound } = await Audio.Sound.createAsync(
+    { uri: fileUri },
+    { shouldPlay: true, progressUpdateIntervalMillis: 250 }
+  );
 
-    const res = await fetch(`${URIS.BACKEND_URI}/tts`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        text,
-        filename: null,
-        download: false,
-      }),
-    });
+  soundRef.current = sound;
 
-    if (!res.ok) throw new Error(`TTS HTTP ${res.status}`);
+  sound.setOnPlaybackStatusUpdate((status) => {
+    if (!status.isLoaded) return;
+    if ((status as any).didJustFinish) {
+      console.log("[TTS] Finished");
+      // fire-and-forget
+      stopSpeaking();
+    }
+  });
+}, [stopSpeaking]);
 
+
+// -------------------- FETCH --------------------
+const fetchTtsFile = useCallback(async (id: string, text: string) => {
+  const cached = ttsCache.current[id];
+  if (cached) return cached;
+
+  const token = URIS.TOKEN;
+  console.log("[TTS] Fetching MP3 from backend…", { len: text.length });
+
+  const res = await fetch(`${URIS.BACKEND_URI}/tts`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ text, filename: null, download: false }),
+  });
+
+  if (!res.ok) throw new Error(`TTS HTTP ${res.status}`);
+
+  if (Platform.OS === "web") {
+    // Force correct MIME on web and create a fresh blob URL
+    const ab = await res.arrayBuffer();
+    const blob = new Blob([ab], { type: "audio/mpeg" });
+    const objectUrl = URL.createObjectURL(blob);
+    ttsCache.current[id] = objectUrl;
+    webBlobUrls.current.add(objectUrl); // track for cleanup later
+    console.log("[TTS] Created blob URL:", objectUrl);
+    return objectUrl;
+  } else {
+    // Native: save to cache as base64
     const arrayBuffer = await res.arrayBuffer();
     const base64 = Buffer.from(arrayBuffer).toString("base64");
 
@@ -745,33 +797,70 @@ export default function ChatScreen() {
     console.log("[TTS] Saved MP3 to cache:", fileUri);
     ttsCache.current[id] = fileUri;
     return fileUri;
-  }, []);
+  }
+}, []);
 
-  const speakMessage = useCallback(async (id: string, text: string) => {
-    try {
-      if (speakingId === id) {
-        await stopSpeaking();
-        return;
-      }
+// -------------------- SPEAK --------------------
+// add this ref somewhere top-level in the component
 
-      if (MOCK_MODE) {
-        console.log("[TTS MOCK] button pressed", {
-          id,
-          preview: text.slice(0, 80),
-          length: text.length,
-        });
-        return;
-      }
 
-      const fileUri = await fetchTtsFile(id, text);
-      setSpeakingId(id);
-      await playLocalFile(fileUri);
-      console.log("[TTS] Playing:", fileUri);
-    } catch (e) {
-      console.warn("TTS error:", e);
-      setSpeakingId(null);
+
+
+const speakMessage = useCallback(async (id: string, text: string) => {
+  console.log("[TTS] handler", { id, speakingIdRef: speakingIdRef.current, stopInProgress: stopInProgressRef.current });
+
+  const now = Date.now();
+
+  if (stopInProgressRef.current) return;
+  if (now - lastStopAtRef.current < 400) return;
+
+  // debounce RN Web double-fires
+  if (lastPressIdRef.current === id && now - lastPressTsRef.current < 350) return;
+  lastPressIdRef.current = id;
+  lastPressTsRef.current = now;
+
+  if (isStartingRef.current) return;
+
+  // Toggle: same id -> stop and exit
+  if (speakingIdRef.current === id) {
+    await stopSpeaking();
+    return;
+  }
+
+  isStartingRef.current = true;
+  try {
+    if (MOCK_MODE) {
+      console.log("[TTS MOCK] button pressed", {
+        id,
+        preview: text.slice(0, 80),
+        length: text.length,
+      });
+      return;
     }
-  }, [MOCK_MODE, speakingId, stopSpeaking, fetchTtsFile, playLocalFile]);
+
+    // Switching to a different id? stop current first (not in playLocalFile)
+    if (speakingIdRef.current && speakingIdRef.current !== id) {
+      await stopSpeaking();
+      if (Date.now() - lastStopAtRef.current < 200) return;
+    }
+
+    // Mark active id BEFORE awaits
+    speakingIdRef.current = id;
+    setSpeakingId(id);
+
+    const fileUri = await fetchTtsFile(id, text);
+    await playLocalFile(fileUri);
+    console.log("[TTS] Playing:", fileUri);
+  } catch (e) {
+    console.warn("TTS error:", e);
+    speakingIdRef.current = null;
+    setSpeakingId(null);
+  } finally {
+    isStartingRef.current = false;
+  }
+}, [MOCK_MODE, stopSpeaking, fetchTtsFile, playLocalFile]);
+
+
 
   const renderItem = ({ item }: { item: Message }) => (
     <MessageItem 
