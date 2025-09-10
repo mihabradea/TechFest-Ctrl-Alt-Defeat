@@ -14,7 +14,7 @@ import InAppBrowser from 'react-native-inappbrowser-reborn';
 // =====================
 // Fill these from your environment / secrets service (NOT hardcoded in prod):
 const PAYPAL_CLIENT_ID = 'AUwDbh92cYpOxREvA3aeugMEfJdMH5U-HwMvLi0z-ABQQ0puDUd1ijGzFsh6s7ugl2zisrqI4tZGYRAT';
-const REDIRECT_URI = 'https://myexpo1327545753.z1.web.core.windows.net/'; // must also be set in PayPal Dev Dashboard
+const REDIRECT_URI = 'https://yellow-tree-0f21d0a10.2.azurestaticapps.net/chat'; // must also be set in PayPal Dev Dashboard
 const USE_SANDBOX = true; // set false for live
 
 // Scopes: include at least "openid". Add others as needed.
