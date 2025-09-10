@@ -40,5 +40,3 @@ agent = Agent(
 
 runner = Runner()
 
-def pi():
-    return agent
