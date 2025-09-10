@@ -182,34 +182,35 @@ export default function LoginScreen() {
                       setAttemptedLogin(false);
                       // TODO
                       // call /login
-                       try {
-                        const res = await fetch(`${URIS.BACKEND_URI}/login`, {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                          },
-                          body: JSON.stringify({
-                            email: "mail@gmail.com", // mocked email, or use the `email` argument
-                          }),
-                        });
+                      //  try {
+                      //   console.log("FIRST TRY");
+                      //   const res = await fetch(`${URIS.BACKEND_URI}/login`, {
+                      //     method: "POST",
+                      //     headers: {
+                      //       "Content-Type": "application/json",
+                      //     },
+                      //     body: JSON.stringify({
+                      //       email: "mail@gmail.com", // mocked email, or use the `email` argument
+                      //     }),
+                      //   });
 
-                        if (!res.ok) {
-                          throw new Error(`Request failed with status ${res.status}`);
-                        }
+                      //   if (!res.ok) {
+                      //     throw new Error(`Request failed with status ${res.status}`);
+                      //   }
 
-                        // Parse JSON response
-                        const data: { token?: string; [key: string]: any } = await res.json();
-
-                        if (data.token) {
-                          setToken(data.token);
-                          console.log("Token saved:", data.token);
-                        } else {
-                          console.warn("No token found in response:", data);
-                        }
-                      } catch (error) {
-                        console.error("Login failed:", error);
-                      }
-                      router.replace('/');
+                      //   // Parse JSON response
+                      //   const data: { token?: string; [key: string]: any } = await res.json();
+                      //   console.log("Response data (2nd debug message):", data);
+                      //   if (data.token) {
+                      //     setToken(data.token);
+                      //     console.log("Token saved:", data.token);
+                      //   } else {
+                      //     console.warn("No token found in response:", data);
+                      //   }
+                      // } catch (error) {
+                      //   console.error("Login failed:", error);
+                      // }
+                      // router.replace('/');
                     }}
                     onCancel={() => attemptedLogin && setMsg("Login cancelled")}
                     onError={(err) => {

@@ -25,11 +25,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from "expo-router"; 
 import { URIS } from '@/constants/constants';
 import { getToken } from "@/constants/token_prop";
-import { get } from "http";
 
 type Role = "user" | "assistant" | "system";
 type Message = { id: string; role: Role; text: string; pending?: boolean };
-type NotificationType = "payment" | "security" | "update" | "reminder";
+type NotificationType = "payment" | "security" | "update" | "reminder" | "unpaid-invoice" | "recurring-payment";
+
+// Updated notification type to include more fields for backend data
 type Notification = { 
   id: string; 
   type: NotificationType; 
@@ -37,6 +38,30 @@ type Notification = {
   message: string; 
   timestamp: string;
   isRead: boolean;
+  amount?: number; // for payment notifications
+  currency?: string; // for payment notifications
+  dueDate?: string; // for invoice notifications
+  customerName?: string; // for invoice notifications
+  recurringDate?: string; // for recurring payments
+};
+
+// Types for backend responses
+type UnpaidInvoice = {
+  invoice_id: string;
+  customer_name: string;
+  amount: number;
+  currency: string;
+  due_date: string;
+  days_overdue: number;
+};
+
+type RecurringPayment = {
+  payment_id: string;
+  customer_name: string;
+  amount: number;
+  currency: string;
+  next_payment_date: string;
+  frequency: string;
 };
 
 const MOCK_MODE = false;
@@ -46,49 +71,58 @@ const MOCK_MODE = false;
 const currentObjectUrlRef = useRef<string | null>(null);
 const webBlobUrls = useRef<Set<string>>(new Set()); // track for cleanup on unmount
 
-// Hardcoded notifications data
-const MOCK_NOTIFICATIONS: Notification[] = [
-  {
-    id: "1",
-    type: "payment",
-    title: "Payment Received",
-    message: "You received $125.00 from John Smith for dinner split",
-    timestamp: "2 min ago",
+// Helper function to format currency
+const formatCurrency = (amount: number, currency: string = 'USD'): string => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency,
+  }).format(amount);
+};
+
+// Helper function to format relative time
+const getRelativeTime = (dateString: string): string => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffTime = Math.abs(now.getTime() - date.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return '1 day ago';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  return `${Math.floor(diffDays / 30)} months ago`;
+};
+
+// Helper function to convert backend data to notifications
+const convertUnpaidInvoicesToNotifications = (invoices: UnpaidInvoice[]): Notification[] => {
+  return invoices.map(invoice => ({
+    id: `unpaid-${invoice.invoice_id}`,
+    type: "unpaid-invoice" as NotificationType,
+    title: "Unpaid Invoice",
+    message: `Invoice from ${invoice.customer_name} is ${invoice.days_overdue} days overdue`,
+    timestamp: getRelativeTime(invoice.due_date),
     isRead: false,
-  },
-  {
-    id: "2",
-    type: "security",
-    title: "Security Alert",
-    message: "New login detected from iPhone 14 Pro in New York",
-    timestamp: "1 hour ago",
+    amount: invoice.amount,
+    currency: invoice.currency,
+    dueDate: invoice.due_date,
+    customerName: invoice.customer_name,
+  }));
+};
+
+const convertRecurringPaymentsToNotifications = (payments: RecurringPayment[]): Notification[] => {
+  return payments.map(payment => ({
+    id: `recurring-${payment.payment_id}`,
+    type: "recurring-payment" as NotificationType,
+    title: "Recurring Payment Due",
+    message: `${payment.frequency} payment to ${payment.customer_name} due today`,
+    timestamp: "Today",
     isRead: false,
-  },
-  {
-    id: "3",
-    type: "payment",
-    title: "Payment Sent",
-    message: "Successfully sent $50.00 to Sarah Johnson",
-    timestamp: "3 hours ago",
-    isRead: true,
-  },
-  {
-    id: "4",
-    type: "update",
-    title: "App Update Available",
-    message: "Version 2.1.0 includes new security features and bug fixes",
-    timestamp: "1 day ago",
-    isRead: true,
-  },
-  {
-    id: "5",
-    type: "reminder",
-    title: "Bill Reminder",
-    message: "Your Netflix subscription payment is due tomorrow",
-    timestamp: "2 days ago",
-    isRead: true,
-  },
-];
+    amount: payment.amount,
+    currency: payment.currency,
+    recurringDate: payment.next_payment_date,
+    customerName: payment.customer_name,
+  }));
+};
 
 // Notification Item Component
 const NotificationItem = ({ 
@@ -118,6 +152,10 @@ const NotificationItem = ({
         return "download-outline";
       case "reminder":
         return "time-outline";
+      case "unpaid-invoice":
+        return "alert-circle-outline";
+      case "recurring-payment":
+        return "refresh-circle-outline";
       default:
         return "notifications-outline";
     }
@@ -133,9 +171,27 @@ const NotificationItem = ({
         return "#4ECDC4";
       case "reminder":
         return "#FFE66D";
+      case "unpaid-invoice":
+        return "#FF4757";
+      case "recurring-payment":
+        return "#7B68EE";
       default:
         return "#FFFFFF";
     }
+  };
+
+  // Enhanced message with amount formatting
+  const getEnhancedMessage = (notification: Notification): string => {
+    if (notification.amount && notification.currency) {
+      const formattedAmount = formatCurrency(notification.amount, notification.currency);
+      if (notification.type === "unpaid-invoice") {
+        return `${formattedAmount} invoice from ${notification.customerName} is overdue`;
+      }
+      if (notification.type === "recurring-payment") {
+        return `${formattedAmount} recurring payment to ${notification.customerName} due today`;
+      }
+    }
+    return notification.message;
   };
 
   return (
@@ -174,7 +230,7 @@ const NotificationItem = ({
         </View>
         
         <Text style={styles.notificationMessage} numberOfLines={2}>
-          {notification.message}
+          {getEnhancedMessage(notification)}
         </Text>
       </Pressable>
     </Animated.View>
@@ -184,10 +240,14 @@ const NotificationItem = ({
 // Notifications Sidebar Component
 const NotificationsSidebar = ({ 
   notifications, 
-  onNotificationPress 
+  onNotificationPress,
+  isLoading = false,
+  onRefresh
 }: {
   notifications: Notification[];
   onNotificationPress: (notification: Notification) => void;
+  isLoading?: boolean;
+  onRefresh?: () => void;
 }) => {
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
@@ -205,7 +265,18 @@ const NotificationsSidebar = ({
             </View>
           )}
         </View>
-        <Ionicons name="notifications-outline" size={20} color="rgba(255, 255, 255, 0.7)" />
+        <View style={styles.notificationHeaderActions}>
+          {onRefresh && (
+            <Pressable onPress={onRefresh} style={styles.refreshBtn}>
+              {isLoading ? (
+                <ActivityIndicator size="small" color="rgba(255, 255, 255, 0.7)" />
+              ) : (
+                <Ionicons name="refresh-outline" size={18} color="rgba(255, 255, 255, 0.7)" />
+              )}
+            </Pressable>
+          )}
+          <Ionicons name="notifications-outline" size={20} color="rgba(255, 255, 255, 0.7)" />
+        </View>
       </View>
       
       <ScrollView 
@@ -213,13 +284,21 @@ const NotificationsSidebar = ({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.notificationsContent}
       >
-        {notifications.map((notification) => (
-          <NotificationItem
-            key={notification.id}
-            notification={notification}
-            onPress={onNotificationPress}
-          />
-        ))}
+        {notifications.length === 0 && !isLoading ? (
+          <View style={styles.emptyNotifications}>
+            <Ionicons name="notifications-off-outline" size={48} color="rgba(255, 255, 255, 0.3)" />
+            <Text style={styles.emptyNotificationsText}>No notifications</Text>
+            <Text style={styles.emptyNotificationsSubtext}>You're all caught up!</Text>
+          </View>
+        ) : (
+          notifications.map((notification) => (
+            <NotificationItem
+              key={notification.id}
+              notification={notification}
+              onPress={onNotificationPress}
+            />
+          ))
+        )}
       </ScrollView>
     </LinearGradient>
   );
@@ -381,7 +460,8 @@ export default function ChatScreen() {
     },
   ]);
 
-  const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
 
   const listRef = useRef<FlatList>(null);
   const canSend = useMemo(() => input.trim().length > 0 && !sending, [input, sending]);
@@ -401,6 +481,72 @@ export default function ChatScreen() {
   const floatAnim1 = useRef(new Animated.Value(0)).current;
   const floatAnim2 = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Fetch notifications from backend
+  const fetchNotifications = useCallback(async () => {
+    if (MOCK_MODE) {
+      return;
+    }
+
+    setNotificationsLoading(true);
+    try {
+      const token = URIS.TOKEN;
+      const headers = {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      // Fetch unpaid invoices and recurring payments in parallel
+      const [unpaidInvoicesResponse, recurringPaymentsResponse] = await Promise.all([
+        fetch(`${URIS.BACKEND_URI}/unpaid-invoices`, { headers }),
+        fetch(`${URIS.BACKEND_URI}/recurring/same_day`, { headers })
+      ]);
+
+      let allNotifications: Notification[] = [];
+
+      // Process unpaid invoices
+      if (unpaidInvoicesResponse.ok) {
+        const unpaidInvoices: UnpaidInvoice[] = await unpaidInvoicesResponse.json();
+        const invoiceNotifications = convertUnpaidInvoicesToNotifications(unpaidInvoices);
+        allNotifications = [...allNotifications, ...invoiceNotifications];
+      } else {
+        console.warn('Failed to fetch unpaid invoices:', unpaidInvoicesResponse.status);
+      }
+
+      // Process recurring payments
+      if (recurringPaymentsResponse.ok) {
+        const recurringPayments: RecurringPayment[] = await recurringPaymentsResponse.json();
+        const recurringNotifications = convertRecurringPaymentsToNotifications(recurringPayments);
+        allNotifications = [...allNotifications, ...recurringNotifications];
+      } else {
+        console.warn('Failed to fetch recurring payments:', recurringPaymentsResponse.status);
+      }
+
+      // Sort by priority: unpaid invoices first, then by timestamp
+      allNotifications.sort((a, b) => {
+        if (a.type === "unpaid-invoice" && b.type !== "unpaid-invoice") return -1;
+        if (a.type !== "unpaid-invoice" && b.type === "unpaid-invoice") return 1;
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      });
+
+      setNotifications(allNotifications);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      // Optionally show an error message to the user
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  // Fetch notifications on component mount and set up periodic refresh
+  useEffect(() => {
+    fetchNotifications();
+
+    // Refresh notifications every 5 minutes
+    const interval = setInterval(fetchNotifications, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
 
   useEffect(() => {
     // Subtle floating animations for background elements
@@ -485,7 +631,33 @@ export default function ChatScreen() {
       )
     );
     
-    // You can add additional logic here, like navigating to a specific screen
+    // Handle different notification types
+    if (notification.type === "unpaid-invoice") {
+      Alert.alert(
+        "Unpaid Invoice",
+        `Invoice from ${notification.customerName}\nAmount: ${formatCurrency(notification.amount!, notification.currency!)}\nDue Date: ${notification.dueDate}\n\nWould you like to send a payment reminder?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Send Reminder", onPress: () => {
+            // Here you could implement sending a reminder
+            console.log('Send reminder for invoice:', notification.id);
+          }}
+        ]
+      );
+    } else if (notification.type === "recurring-payment") {
+      Alert.alert(
+        "Recurring Payment Due",
+        `Payment to ${notification.customerName}\nAmount: ${formatCurrency(notification.amount!, notification.currency!)}\nDue: ${notification.recurringDate}\n\nWould you like to process this payment?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Process Payment", onPress: () => {
+            // Here you could implement payment processing
+            console.log('Process recurring payment:', notification.id);
+          }}
+        ]
+      );
+    }
+    
     console.log('Notification pressed:', notification);
   };
 
@@ -501,7 +673,8 @@ export default function ChatScreen() {
     });
 
   const sendToBackend = async (userText: string) => {
-    const token = getToken();
+    const token = URIS.TOKEN;
+    // const token = getToken();
     console.log("[CHAT] Sending to backend…", { len: userText.length, messages: messages.length, token: token });
     const res = await fetch(`${URIS.BACKEND_URI}/chat`, {
       method: "POST",
@@ -619,7 +792,8 @@ export default function ChatScreen() {
   }, [input, sendMessage]);
 
   const uploadForTranscription = useCallback(async (uri: string) => {
-  const token = getToken();
+    const token = URIS.TOKEN;
+    // const token = getToken();
 
   if (Platform.OS === "web") {
     // On web: use fetch + FormData with a Blob
@@ -667,7 +841,9 @@ export default function ChatScreen() {
         if (!text.trim()) return;
         setInput("");
         await sendMessage(text);
-      }, [sendMessage]);const onMicPress = useCallback(async () => {
+      }, [sendMessage]);
+
+  const onMicPress = useCallback(async () => {
       try {
         if (isRecording) {
           const uri = await stopRecording();
@@ -682,9 +858,6 @@ export default function ChatScreen() {
       }
     }, [isRecording, startRecording, stopRecording, uploadForTranscription]);
 
-
-
-
   const handleChangeText = (t: string) => {
     if (t.endsWith("\n")) {
       const toSend = t.replace(/\n+$/, "");
@@ -698,7 +871,6 @@ const isStartingRef = useRef(false);
 const speakingIdRef = useRef<string | null>(null);
 const stopInProgressRef = useRef(false);
 const lastStopAtRef = useRef(0);
-
 
 // simple click guard to avoid double-fires on web
 const lastPressTsRef = useRef(0);
@@ -736,7 +908,6 @@ useEffect(() => {
   }
 }, []);
 
-
 // -------------------- PLAY --------------------
 const playLocalFile = useCallback(async (fileUri: string) => {
   // ❌ no stopSpeaking here — it resets speakingId during start
@@ -758,13 +929,13 @@ const playLocalFile = useCallback(async (fileUri: string) => {
   });
 }, [stopSpeaking]);
 
-
 // -------------------- FETCH --------------------
 const fetchTtsFile = useCallback(async (id: string, text: string) => {
   const cached = ttsCache.current[id];
   if (cached) return cached;
 
   const token = URIS.TOKEN;
+  // const token = getToken();
   console.log("[TTS] Fetching MP3 from backend…", { len: text.length });
 
   const res = await fetch(`${URIS.BACKEND_URI}/tts`, {
@@ -804,11 +975,6 @@ const fetchTtsFile = useCallback(async (id: string, text: string) => {
 }, []);
 
 // -------------------- SPEAK --------------------
-// add this ref somewhere top-level in the component
-
-
-
-
 const speakMessage = useCallback(async (id: string, text: string) => {
   console.log("[TTS] handler", { id, speakingIdRef: speakingIdRef.current, stopInProgress: stopInProgressRef.current });
 
@@ -862,8 +1028,6 @@ const speakMessage = useCallback(async (id: string, text: string) => {
     isStartingRef.current = false;
   }
 }, [MOCK_MODE, stopSpeaking, fetchTtsFile, playLocalFile]);
-
-
 
   const renderItem = ({ item }: { item: Message }) => (
     <MessageItem 
@@ -950,7 +1114,7 @@ const speakMessage = useCallback(async (id: string, text: string) => {
               style={styles.header}
             >
             
-              <View style={styles.headerRow}>   {/* NEW */}
+              <View style={styles.headerRow}>
                 <View style={styles.headerContent}>
                   <View style={styles.headerIcon}>
                     <Text style={styles.headerEmoji}>🤖</Text>
@@ -1036,6 +1200,8 @@ const speakMessage = useCallback(async (id: string, text: string) => {
           <NotificationsSidebar 
             notifications={notifications}
             onNotificationPress={handleNotificationPress}
+            isLoading={notificationsLoading}
+            onRefresh={fetchNotifications}
           />
         </View>
       </SafeAreaView>
@@ -1091,7 +1257,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
-  headerRow: {                             // NEW
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1100,7 +1266,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  logoutBtn: {                             // NEW
+  logoutBtn: {
     paddingHorizontal: 12,
     height: 36,
     borderRadius: 18,
@@ -1113,12 +1279,12 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 3,
   },
-  logoutInner: {                           // NEW
+  logoutInner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  logoutText: {                            // NEW
+  logoutText: {
     color: '#0A0A2E',
     fontWeight: '700',
     fontSize: 13,
@@ -1346,6 +1512,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  notificationHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  refreshBtn: {
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
   notificationsList: {
     flex: 1,
     paddingTop: 8,
@@ -1353,6 +1529,22 @@ const styles = StyleSheet.create({
   notificationsContent: {
     paddingHorizontal: 12,
     paddingBottom: 20,
+  },
+  emptyNotifications: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyNotificationsText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 16,
+    fontWeight: '500',
+    marginTop: 12,
+  },
+  emptyNotificationsSubtext: {
+    color: 'rgba(255, 255, 255, 0.4)',
+    fontSize: 14,
+    marginTop: 4,
   },
   notificationItem: {
     marginBottom: 8,
